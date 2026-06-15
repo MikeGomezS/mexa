@@ -24,7 +24,7 @@
 import RPi.GPIO as GPIO
 import subprocess
 
-from config import FAN_PIN, TEMP_FAN_ON, TEMP_FAN_OFF
+from .config import FAN_PIN, TEMP_FAN_ON, TEMP_FAN_OFF
 
 TEMP_ON  = TEMP_FAN_ON
 TEMP_OFF = TEMP_FAN_OFF

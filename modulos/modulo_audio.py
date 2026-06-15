@@ -13,7 +13,7 @@ import time
 import pyaudio
 from vosk import Model, KaldiRecognizer
 
-_MODELO_DIR  = os.path.join(os.path.dirname(__file__), "modelo_vosk_es")
+_MODELO_DIR  = os.path.join(os.path.dirname(__file__), "..", "modelo_vosk_es")
 _VOSK_RATE   = 16000   # Vosk siempre necesita 16 kHz
 _CHUNK       = 4096
 

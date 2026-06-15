@@ -15,7 +15,7 @@
 
 import time
 
-from conexion_arduino import iniciar_conexion, enviar
+from .conexion_arduino import iniciar_conexion, enviar
 
 
 def iniciar_motores():

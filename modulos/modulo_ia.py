@@ -7,7 +7,7 @@
 
 import re
 import ollama
-from conocimiento import buscar_contexto
+from .conocimiento import buscar_contexto
 
 _SISTEMA_BASE = """Eres MEXA, un robot educativo experto en historia
 y cultura de México. Responde de forma clara, amable y en

@@ -23,7 +23,7 @@
 import RPi.GPIO as GPIO
 import time
 
-from config import PIR_PIN, TRIG_PIN, ECHO_PIN
+from .config import PIR_PIN, TRIG_PIN, ECHO_PIN
 
 def iniciar_sensores():
     GPIO.setmode(GPIO.BCM)
