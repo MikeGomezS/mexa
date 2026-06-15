@@ -27,19 +27,19 @@ import os
 import time
 import RPi.GPIO as GPIO
 
-from modulo_audio       import escuchar_pregunta
-from modulo_ia          import (generar_respuesta_stream,
-                                limpiar_historial, establecer_idioma)
-from modulo_tts         import hablar, hablar_stream, hablar_despedida, hablar_no_entendio
-from modulo_sensores    import iniciar_sensores, detectar_persona, hay_obstaculo
-from modulo_motores     import iniciar_motores, detener, orientarse_a_usuario
-from modulo_camara      import iniciar_camara, posicion_cara, apagar_camara
-from modulo_proyector   import (iniciar_proyector, mostrar_segun_tema,
-                                pantalla_bienvenida, cambiar_expresion,
-                                apagar_proyector, reproducir_video, CARPETA_VIDEOS)
-from modulo_ventiladores import iniciar_ventiladores, encender_siempre, controlar_por_temperatura
-from modulo_brazos      import iniciar_brazos, cerrar_brazos
-from conexion_arduino   import cerrar_conexion
+from modulos.modulo_audio       import escuchar_pregunta
+from modulos.modulo_ia          import (generar_respuesta_stream,
+                                        limpiar_historial, establecer_idioma)
+from modulos.modulo_tts         import hablar, hablar_stream, hablar_despedida, hablar_no_entendio
+from modulos.modulo_sensores    import iniciar_sensores, detectar_persona, hay_obstaculo
+from modulos.modulo_motores     import iniciar_motores, detener, orientarse_a_usuario
+from modulos.modulo_camara      import iniciar_camara, posicion_cara, apagar_camara
+from modulos.modulo_proyector   import (iniciar_proyector, mostrar_segun_tema,
+                                        pantalla_bienvenida, cambiar_expresion,
+                                        apagar_proyector, reproducir_video, CARPETA_VIDEOS)
+from modulos.modulo_ventiladores import iniciar_ventiladores, encender_siempre, controlar_por_temperatura
+from modulos.modulo_brazos      import iniciar_brazos, cerrar_brazos
+from modulos.conexion_arduino   import cerrar_conexion
 
 # ── Configuración ────────────────────────────────────────────
 TIEMPO_ESPERA_USUARIO = 30   # segundos antes de despedirse si no habla

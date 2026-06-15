@@ -17,13 +17,13 @@ import os
 from piper.voice import PiperVoice
 from langdetect import detect, LangDetectException
 
-_MODELO_DIR = os.path.join(os.path.dirname(__file__), "media", "tts")
+_MODELO_DIR = os.path.join(os.path.dirname(__file__), "..", "media", "tts")
 _MODELOS = {
     "es": os.path.join(_MODELO_DIR, "es_MX-claude-high.onnx"),
     "en": os.path.join(_MODELO_DIR, "en_US-lessac-high.onnx"),
 }
 _AUDIO_TMP = "/tmp/mexa_tts.wav"
-_CACHE_DIR = os.path.join(os.path.dirname(__file__), "media", "tts_cache")
+_CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "media", "tts_cache")
 _cache: dict[str, str] = {}  # texto → ruta wav pre-sintetizada
 
 _voces: dict = {}
@@ -51,7 +51,7 @@ def _detectar_idioma(texto: str) -> str:
 
 def _enviar_volumen(rms: int) -> None:
     try:
-        from modulo_proyector import enviar_volumen
+        from .modulo_proyector import enviar_volumen
         enviar_volumen(min(rms / _VOL_ESCALA, 1.0))
     except Exception:
         pass
@@ -146,7 +146,7 @@ def hablar(texto: str) -> None:
     Frases dinámicas (IA): espeak-ng, síntesis en ~0ms."""
     if not texto:
         return
-    from modulo_brazos import animar, parar
+    from .modulo_brazos import animar, parar
     print(f"[TTS] Hablando: {texto[:50]}...")
     animar()
     try:
@@ -180,7 +180,7 @@ def hablar_stream(oraciones) -> None:
     """Reproduce un iterable de oraciones solapando síntesis y reproducción.
     Mientras la oración N se escucha, la N+1 ya se está sintetizando en background.
     Elimina el silencio entre oraciones en respuestas de IA."""
-    from modulo_brazos import animar, parar
+    from .modulo_brazos import animar, parar
     _CENTINELA = object()
     wav_queue: queue.Queue = queue.Queue(maxsize=2)
 

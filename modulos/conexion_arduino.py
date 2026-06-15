@@ -11,7 +11,7 @@
 import time
 import serial
 
-from config import ARDUINO_PUERTO, ARDUINO_BAUDRATE
+from .config import ARDUINO_PUERTO, ARDUINO_BAUDRATE
 
 _serial = None
 

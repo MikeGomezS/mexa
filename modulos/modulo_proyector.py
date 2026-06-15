@@ -31,8 +31,8 @@ import sys
 
 import pygame
 
-CARPETA_IMAGENES = os.path.join(os.path.dirname(__file__), "media", "imagenes")
-CARPETA_VIDEOS   = os.path.join(os.path.dirname(__file__), "media", "videos")
+CARPETA_IMAGENES = os.path.join(os.path.dirname(__file__), "..", "media", "imagenes")
+CARPETA_VIDEOS   = os.path.join(os.path.dirname(__file__), "..", "media", "videos")
 
 # Diccionario de palabras clave → archivo de imagen
 IMAGENES_POR_TEMA = {

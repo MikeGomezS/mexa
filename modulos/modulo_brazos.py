@@ -14,7 +14,7 @@
 #  (un solo Arduino). El transporte vive en conexion_arduino.py.
 # ============================================================
 
-from conexion_arduino import iniciar_conexion, enviar
+from .conexion_arduino import iniciar_conexion, enviar
 
 
 def iniciar_brazos():

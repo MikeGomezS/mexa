@@ -6,20 +6,24 @@ Prueba del flujo completo de MEXA usando solo:
   - Brazos (Arduino via USB Serial — opcional, se omite si no está conectado)
 
 Sin GPIO, sin motores, sin cámara, sin sensores.
-Ejecutar: python3 test_flujo.py
+Ejecutar desde la raíz del proyecto: python3 tests/test_flujo.py
 """
 
 import os
+import sys
 import time
 
-from modulo_proyector import (
+# Permite importar el paquete `modulos` al correr este test desde tests/
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from modulos.modulo_proyector import (
     iniciar_proyector, pantalla_bienvenida, cambiar_expresion,
     mostrar_segun_tema, reproducir_video, apagar_proyector, CARPETA_VIDEOS,
 )
-from modulo_audio  import escuchar_pregunta
-from modulo_tts    import hablar, hablar_stream, hablar_despedida, hablar_no_entendio, presintetizar
-from modulo_ia     import generar_respuesta_stream, limpiar_historial, establecer_idioma, warmup_llm
-from modulo_brazos import iniciar_brazos, cerrar_brazos
+from modulos.modulo_audio  import escuchar_pregunta
+from modulos.modulo_tts    import hablar, hablar_stream, hablar_despedida, hablar_no_entendio, presintetizar
+from modulos.modulo_ia     import generar_respuesta_stream, limpiar_historial, establecer_idioma, warmup_llm
+from modulos.modulo_brazos import iniciar_brazos, cerrar_brazos
 
 # ── Configuración ────────────────────────────────────────────
 INTENTOS_MAX         = 3
