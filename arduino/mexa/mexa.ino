@@ -1,8 +1,8 @@
 // ============================================================
 //  MEXA — Firmware del Arduino (un solo Arduino para todo)
-//  ESTADO: 4 motores DC activos. Servos (brazos) PENDIENTES —
-//  se agregarán sin librería Servo (timer manual). Por eso este
-//  sketch NO incluye Servo.h.
+//  ESTADO: 4 motores DC + 2 servos de brazos activos.
+//  Los brazos usan la librería Servo con gesto NO bloqueante
+//  (barrido por millis(), para no frenar la lectura serial).
 //
 //  PINOUT MOTORES (4 motores, puente(s) H tipo MX1508):
 //    Motor 0  ->  D2, D3
@@ -18,7 +18,8 @@
 //    Conducir:  F=adelante  B=atrás  R=derecha  L=izquierda  S=stop
 //    Identificar (mueve UN solo motor hacia "adelante"):
 //               1=Motor0  2=Motor1  3=Motor2  4=Motor3
-//    Brazos:    H / P  -> aceptados pero SIN efecto por ahora
+//    Brazos:    H=gesticular (hablando)  P=volver a reposo
+//               Servos: brazo izquierdo -> D10 ; brazo derecho -> D11
 //
 //  DIAGNÓSTICO: banner al arrancar + "OK <cmd>" por comando +
 //  LED de la placa (pin 13) encendido = hay orden de motor activa.
@@ -26,6 +27,8 @@
 //  ALIMENTACIÓN: VM del driver -> + de la pila ; GND del driver
 //  -> - de la pila Y TAMBIÉN al GND del Arduino (tierra común).
 // ============================================================
+
+#include <Servo.h>
 
 // ── Motores ──────────────────────────────────────────────────
 // Cada motor: {pinA, pinB}. dir +1 → A=HIGH,B=LOW ; -1 → A=LOW,B=HIGH ; 0 → ambos LOW
@@ -65,6 +68,45 @@ void led(bool encendido) {
     digitalWrite(LED_BUILTIN, encendido ? HIGH : LOW);
 }
 
+// ── Brazos (servos) ──────────────────────────────────────────
+// Gesto no bloqueante: al recibir 'H' los brazos oscilan entre
+// BRAZO_MIN y BRAZO_MAX; con 'P' vuelven a BRAZO_REPOSO.
+// Ajustá los ángulos según el montaje mecánico real.
+const uint8_t SERVO_IZQ_PIN = 10;
+const uint8_t SERVO_DER_PIN = 11;
+
+const int BRAZO_REPOSO = 90;   // ángulo en reposo
+const int BRAZO_MIN    = 60;   // extremos del barrido al hablar
+const int BRAZO_MAX    = 120;
+const int BRAZO_PASO   = 2;    // grados por actualización
+const unsigned long BRAZO_INTERVALO_MS = 15;  // velocidad del gesto
+
+Servo brazoIzq, brazoDer;
+bool animandoBrazos = false;
+int  brazoAng = BRAZO_REPOSO;
+int  brazoDir = +1;
+unsigned long brazoUltimo = 0;
+
+void brazosReposo() {
+    brazoAng = BRAZO_REPOSO;
+    brazoIzq.write(BRAZO_REPOSO);
+    brazoDer.write(180 - BRAZO_REPOSO);  // espejo: brazo derecho montado invertido
+}
+
+void actualizarBrazos() {
+    if (!animandoBrazos) return;
+    unsigned long ahora = millis();
+    if (ahora - brazoUltimo < BRAZO_INTERVALO_MS) return;
+    brazoUltimo = ahora;
+
+    brazoAng += brazoDir * BRAZO_PASO;
+    if (brazoAng >= BRAZO_MAX) { brazoAng = BRAZO_MAX; brazoDir = -1; }
+    if (brazoAng <= BRAZO_MIN) { brazoAng = BRAZO_MIN; brazoDir = +1; }
+
+    brazoIzq.write(brazoAng);
+    brazoDer.write(180 - brazoAng);      // espejo para gesto simétrico
+}
+
 void setup() {
     Serial.begin(9600);
 
@@ -77,10 +119,16 @@ void setup() {
     pinMode(LED_BUILTIN, OUTPUT);
     led(false);
 
-    Serial.println("MEXA firmware 4 motores listo (servos: pendiente)");
+    brazoIzq.attach(SERVO_IZQ_PIN);
+    brazoDer.attach(SERVO_DER_PIN);
+    brazosReposo();
+
+    Serial.println("MEXA firmware listo: 4 motores + 2 brazos");
 }
 
 void loop() {
+    actualizarBrazos();   // animación no bloqueante de los brazos
+
     if (Serial.available() > 0) {
         char cmd = Serial.read();
         switch (cmd) {
@@ -95,9 +143,9 @@ void loop() {
             case '2': soloMotor(1); led(true); break;
             case '3': soloMotor(2); led(true); break;
             case '4': soloMotor(3); led(true); break;
-            // — Brazos (reservado, sin efecto por ahora) —
-            case 'H': break;
-            case 'P': break;
+            // — Brazos —
+            case 'H': animandoBrazos = true;                   break;  // gesticular al hablar
+            case 'P': animandoBrazos = false; brazosReposo();  break;  // volver a reposo
             default:  return;  // '\n', '\r' y otros: no responder
         }
         Serial.print("OK ");
