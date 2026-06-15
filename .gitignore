@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Assets pesados (no son código: se descargan/copian aparte)
+modelo_vosk_es/
+media/
+
+# Sistema
+.DS_Store
+*.swp
+
+# Runtime / locks
+.claude/scheduled_tasks.lock
