@@ -264,7 +264,9 @@ def _ciclo_preguntas(f: dict) -> bool | None:
 def ciclo_interaccion() -> bool | None:
     """
     Flujo completo con un visitante.
-    Retorna True si el programa debe terminar (se dijo adiós).
+    Retorna True  → terminar el programa (se dijo adiós)
+            False → volver a esperar a un visitante (PIR)
+            None  → reiniciar la interacción de inmediato (se dijo "mexa")
     """
     limpiar_historial()
     orientarse_a_usuario(posicion_cara())
@@ -320,34 +322,44 @@ def ciclo_interaccion() -> bool | None:
     cambiar_expresion("hablando")
     hablar(f["post_video"].format(nombre=nombre_civ))
 
-    # 6 y 7. Ciclo de preguntas con IA + despedida
-    _ciclo_preguntas(f)
-    return False
+    # 6 y 7. Ciclo de preguntas con IA + despedida.
+    # Propaga el resultado: True=adiós (apagar), False=esperar persona,
+    # None=reiniciar la interacción de inmediato (alguien dijo "mexa").
+    return _ciclo_preguntas(f)
 
 def ciclo_principal():
     """
-    Flujo lineal: espera una persona, hace una interacción, queda en pausa con cara.
+    Flujo continuo de exhibición: espera a un visitante (PIR), lo atiende y,
+    al terminar, vuelve a esperar al siguiente. Según lo que retorne
+    ciclo_interaccion(): True=apagar MEXA, False=esperar al siguiente,
+    None=reiniciar la interacción de inmediato (alguien dijo "mexa").
     """
     print("[MAIN] MEXA en espera de visitantes...")
     _ultimo_check_temp = 0.0
 
     try:
-        # Esperar al primer visitante
-        while not detectar_persona():
-            ahora = time.time()
-            if ahora - _ultimo_check_temp >= INTERVALO_TEMP_S:
-                controlar_por_temperatura()
-                _ultimo_check_temp = ahora
-            time.sleep(0.5)
-
-        print("[MAIN] ¡Persona detectada! Iniciando interacción.")
-        ciclo_interaccion()
-
-        # Queda en pausa mostrando solo la cara
-        pantalla_bienvenida()
-        print("[MAIN] Interacción completada. Cara activa. Ctrl+C para salir.")
         while True:
-            time.sleep(1)
+            # Esperar a un visitante; mientras tanto, controlar temperatura.
+            while not detectar_persona():
+                ahora = time.time()
+                if ahora - _ultimo_check_temp >= INTERVALO_TEMP_S:
+                    controlar_por_temperatura()
+                    _ultimo_check_temp = ahora
+                time.sleep(0.5)
+
+            print("[MAIN] ¡Persona detectada! Iniciando interacción.")
+
+            # Atender al visitante. None = reiniciar de inmediato (dijo "mexa").
+            terminar = ciclo_interaccion()
+            while terminar is None:
+                terminar = ciclo_interaccion()
+
+            if terminar:                # True → adiós: apagar MEXA
+                break
+
+            # False → volver a esperar al siguiente visitante.
+            pantalla_bienvenida()
+            print("[MAIN] Interacción completada. Esperando al siguiente visitante...")
 
     except KeyboardInterrupt:
         print("\n[MAIN] Interrupción detectada (Ctrl+C).")
