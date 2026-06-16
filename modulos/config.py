@@ -19,7 +19,7 @@ ENC_DER = 20
 FAN_PIN = 21
 
 # Arduino (UN solo Arduino via USB Serial — controla brazos + motores)
-ARDUINO_PUERTO   = "/dev/ttyUSB0"  # usar /dev/ttyACM0 si es Arduino Uno/Mega original
+ARDUINO_PUERTO   = "/dev/ttyACM0"  # Arduino Mega 2560 R3 original (CDC ACM); usar /dev/ttyUSB0 si es clon CH340
 ARDUINO_BAUDRATE = 9600
 
 # Aliases retrocompatibles (apuntan al mismo Arduino)
