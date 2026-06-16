@@ -223,11 +223,3 @@ def hablar_stream(oraciones) -> None:
     finally:
         parar()
 
-
-def hablar_despedida():
-    time.sleep(3)
-    hablar("Fue un placer compartir cultura contigo. ¡Hasta pronto!")
-
-
-def hablar_no_entendio():
-    hablar("No escuché bien. ¿Puedes repetir tu pregunta, por favor?")

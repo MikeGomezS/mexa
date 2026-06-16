@@ -21,7 +21,7 @@ from modulos.modulo_proyector import (
     mostrar_segun_tema, reproducir_video, apagar_proyector, CARPETA_VIDEOS,
 )
 from modulos.modulo_audio  import escuchar_pregunta
-from modulos.modulo_tts    import hablar, hablar_stream, hablar_despedida, hablar_no_entendio, presintetizar
+from modulos.modulo_tts    import hablar, hablar_stream, presintetizar
 from modulos.modulo_ia     import generar_respuesta_stream, limpiar_historial, establecer_idioma, warmup_llm
 from modulos.modulo_brazos import iniciar_brazos, cerrar_brazos
 
