@@ -31,7 +31,7 @@ from modulos.modulo_audio       import escuchar_pregunta
 from modulos.modulo_ia          import (generar_respuesta_stream,
                                         limpiar_historial, establecer_idioma)
 from modulos.modulo_tts         import hablar, hablar_stream, hablar_despedida, hablar_no_entendio
-from modulos.modulo_sensores    import iniciar_sensores, detectar_persona, hay_obstaculo
+from modulos.modulo_sensores    import iniciar_sensores, detectar_persona
 from modulos.modulo_motores     import iniciar_motores, detener, orientarse_a_usuario
 from modulos.modulo_camara      import iniciar_camara, posicion_cara, apagar_camara
 from modulos.modulo_proyector   import (iniciar_proyector, mostrar_segun_tema,
@@ -44,7 +44,6 @@ from modulos.conexion_arduino   import cerrar_conexion
 # ── Configuración ────────────────────────────────────────────
 TIEMPO_ESPERA_USUARIO = 30   # segundos antes de despedirse si no habla
 INTENTOS_MAX          = 3    # intentos de escuchar antes de despedirse
-DISTANCIA_MINIMA_CM   = 15   # distancia mínima para detectar obstáculo
 INTERVALO_TEMP_S      = 10   # segundos entre cada lectura de temperatura
 
 # ── Civilizaciones disponibles ───────────────────────────────
@@ -294,13 +293,7 @@ def ciclo_principal():
             time.sleep(0.5)
 
         print("[MAIN] ¡Persona detectada! Iniciando interacción.")
-        time.sleep(0.5)
-
-        if hay_obstaculo(DISTANCIA_MINIMA_CM):
-            print("[MAIN] Obstáculo muy cerca, no me muevo.")
-            hablar("Perdón, estoy muy cerca de algo. Por favor dame un poco de espacio.")
-        else:
-            ciclo_interaccion()
+        ciclo_interaccion()
 
         # Queda en pausa mostrando solo la cara
         pantalla_bienvenida()

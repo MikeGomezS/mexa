@@ -14,6 +14,8 @@ import serial
 from .config import ARDUINO_PUERTO, ARDUINO_BAUDRATE
 
 _serial = None
+_rx_buffer = ""          # acumula bytes hasta tener líneas completas
+_presencia = False       # último estado de presencia reportado por el Arduino
 
 
 def iniciar_conexion():
@@ -39,6 +41,38 @@ def enviar(cmd: str):
             _serial.write((cmd + "\n").encode())
         except Exception as e:
             print(f"[ARDUINO] Error enviando '{cmd}': {e}")
+
+
+def _bombear():
+    """Lee SIN bloquear todo lo que el Arduino haya enviado y actualiza
+    el estado compartido. El Arduino manda líneas terminadas en '\\n':
+    'PRES:0/1' (presencia de los PIR), 'WALL:I/D' (evasión) y 'OK <cmd>'.
+    Aquí solo nos interesa la presencia; el resto se ignora."""
+    global _rx_buffer, _presencia
+    if not (_serial and _serial.is_open):
+        return
+    try:
+        n = _serial.in_waiting
+        if not n:
+            return
+        _rx_buffer += _serial.read(n).decode(errors="ignore")
+    except Exception as e:
+        print(f"[ARDUINO] Error leyendo: {e}")
+        return
+
+    partes = _rx_buffer.split("\n")
+    _rx_buffer = partes.pop()          # lo último puede ser una línea incompleta
+    for linea in partes:
+        linea = linea.strip()
+        if linea.startswith("PRES:"):
+            _presencia = linea.endswith("1")
+
+
+def hay_presencia() -> bool:
+    """Procesa lo recibido del Arduino y devuelve el último estado de
+    presencia conocido (lo determinan los 2 PIR conectados al Arduino)."""
+    _bombear()
+    return _presencia
 
 
 def cerrar_conexion():
