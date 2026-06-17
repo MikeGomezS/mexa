@@ -33,7 +33,7 @@ from modulos.modulo_ia          import (generar_respuesta_stream,
                                         warmup_llm)
 from modulos.modulo_tts         import hablar, hablar_stream, presintetizar
 from modulos.modulo_sensores    import iniciar_sensores, detectar_persona
-from modulos.modulo_motores     import iniciar_motores, detener, orientarse_a_usuario
+from modulos.modulo_motores     import iniciar_motores, detener, orientarse_a_usuario, mover_por_tiempo
 from modulos.modulo_camara      import iniciar_camara, posicion_cara, apagar_camara
 from modulos.modulo_proyector   import (iniciar_proyector, mostrar_segun_tema,
                                         pantalla_bienvenida, cambiar_expresion,
@@ -44,6 +44,7 @@ from modulos.conexion_arduino   import cerrar_conexion
 # ── Configuración ────────────────────────────────────────────
 TIEMPO_ESPERA_USUARIO = 30   # segundos antes de despedirse si no habla
 INTENTOS_MAX          = 3    # intentos de escuchar antes de despedirse
+AVANCE_PERSONA_S      = 3.0  # segundos que avanza al frente al detectar persona
 
 # ── Civilizaciones disponibles ───────────────────────────────
 # Cada entrada: palabra_clave → (ruta_video_es, ruta_video_en, nombre_para_hablar)
@@ -339,6 +340,9 @@ def ciclo_principal():
                 time.sleep(0.5)
 
             print("[MAIN] ¡Persona detectada! Iniciando interacción.")
+
+            # Avanzar al frente hacia la persona detectada (frena solo al terminar).
+            mover_por_tiempo("adelante", AVANCE_PERSONA_S)
 
             # Atender al visitante. None = reiniciar de inmediato (dijo "mexa").
             terminar = ciclo_interaccion()
