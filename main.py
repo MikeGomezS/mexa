@@ -29,9 +29,10 @@ import RPi.GPIO as GPIO
 
 from modulos.modulo_audio       import escuchar_pregunta
 from modulos.modulo_ia          import (generar_respuesta_stream,
-                                        limpiar_historial, establecer_idioma)
-from modulos.modulo_tts         import hablar, hablar_stream, hablar_despedida, hablar_no_entendio
-from modulos.modulo_sensores    import iniciar_sensores, detectar_persona, hay_obstaculo
+                                        limpiar_historial, establecer_idioma,
+                                        warmup_llm)
+from modulos.modulo_tts         import hablar, hablar_stream, presintetizar
+from modulos.modulo_sensores    import iniciar_sensores, detectar_persona
 from modulos.modulo_motores     import iniciar_motores, detener, orientarse_a_usuario
 from modulos.modulo_camara      import iniciar_camara, posicion_cara, apagar_camara
 from modulos.modulo_proyector   import (iniciar_proyector, mostrar_segun_tema,
@@ -44,7 +45,6 @@ from modulos.conexion_arduino   import cerrar_conexion
 # ── Configuración ────────────────────────────────────────────
 TIEMPO_ESPERA_USUARIO = 30   # segundos antes de despedirse si no habla
 INTENTOS_MAX          = 3    # intentos de escuchar antes de despedirse
-DISTANCIA_MINIMA_CM   = 15   # distancia mínima para detectar obstáculo
 INTERVALO_TEMP_S      = 10   # segundos entre cada lectura de temperatura
 
 # ── Civilizaciones disponibles ───────────────────────────────
@@ -87,6 +87,7 @@ _FRASES = {
     "es": {
         "saludo_civ":   "¡Hola! Soy MEXA, tu guía de la historia y cultura de México. ¿Sobre cuál civilización quieres aprender hoy? Tenemos: {oferta}.",
         "no_reconocio": "No reconocí esa civilización. Tenemos: {oferta}. ¿Cuál te gustaría?",
+        "no_entendio":  "No escuché bien. ¿Puedes repetir, por favor?",
         "intro_video":  "Perfecto, te voy a mostrar un video sobre {nombre}.",
         "post_video":   "Espero que hayas disfrutado el video sobre {nombre}. ¿Tienes alguna pregunta?",
         "despedida":    "Fue un placer compartir cultura contigo. ¡Hasta pronto!",
@@ -94,11 +95,45 @@ _FRASES = {
     "en": {
         "saludo_civ":   "Hello! I am MEXA, your guide to the history and culture of Mexico. Which civilization would you like to learn about today? We have: {oferta}.",
         "no_reconocio": "I didn't recognize that civilization. We have: {oferta}. Which one would you like?",
+        "no_entendio":  "I didn't catch that. Could you repeat, please?",
         "intro_video":  "Perfect, I will show you a video about {nombre}.",
         "post_video":   "I hope you enjoyed the video about {nombre}. Do you have any questions?",
         "despedida":    "It was a pleasure sharing culture with you. See you soon!",
     },
 }
+
+def _presintetizar_todo() -> None:
+    """Pre-sintetiza con Piper todas las frases fijas al arrancar para
+    reproducción instantánea durante la interacción (sin latencia de síntesis)."""
+    print("[MAIN] Pre-sintetizando frases fijas...")
+
+    # Prompt de idioma (siempre en inglés, antes de saber la preferencia).
+    frases = [
+        "Hi, I am MEXA. Would you prefer Spanish or English?",  # _seleccionar_idioma
+        "Please say 'español' or 'English'.",                   # _seleccionar_idioma
+    ]
+
+    # Frases dependientes del idioma y de cada civilización.
+    for idioma in ("es", "en"):
+        f = _FRASES[idioma]
+        nombres_civ = (
+            _NOMBRES_DISPONIBLES if idioma == "es"
+            else [_NOMBRES_EN[n] for n in _NOMBRES_DISPONIBLES]
+        )
+        oferta = ", ".join(nombres_civ)
+        frases.append(f["saludo_civ"].format(oferta=oferta))
+        frases.append(f["no_reconocio"].format(oferta=oferta))
+        frases.append(f["no_entendio"])
+        frases.append(f["despedida"])
+        for nombre in nombres_civ:
+            frases.append(f["intro_video"].format(nombre=nombre))
+            frases.append(f["post_video"].format(nombre=nombre))
+
+    for texto in frases:
+        presintetizar(texto)
+
+    print(f"[MAIN] {len(frases)} frases listas.")
+
 
 def iniciar_todo():
     """Inicializa todos los módulos del robot."""
@@ -117,6 +152,13 @@ def iniciar_todo():
     iniciar_brazos()
 
     pantalla_bienvenida()
+
+    # Optimizaciones de latencia (validadas en tests/test_flujo.py):
+    # pre-sintetizar frases fijas y precalentar el LLM para que la primera
+    # respuesta de IA no pague el costo de carga del modelo.
+    _presintetizar_todo()
+    warmup_llm()
+
     print("[MAIN] Todos los módulos iniciados. MEXA listo.")
 
 def apagar_todo():
@@ -163,9 +205,9 @@ def _detectar_civilizacion(texto: str, idioma: str) -> tuple[str, str] | None:
     return None
 
 
-def _ciclo_preguntas() -> bool | None:
+def _ciclo_preguntas(f: dict) -> bool | None:
     """
-    Escucha y responde preguntas.
+    Escucha y responde preguntas, usando las frases del idioma elegido (f).
     Retorna True  → terminar programa (adiós)
             False → volver a esperar PIR
             None  → reiniciar ciclo_interaccion inmediatamente (se dijo "mexa")
@@ -176,7 +218,8 @@ def _ciclo_preguntas() -> bool | None:
     while True:
         if time.time() - tiempo_ultimo > TIEMPO_ESPERA_USUARIO:
             cambiar_expresion("hablando")
-            hablar_despedida()
+            time.sleep(3)
+            hablar(f["despedida"])
             return False
 
         cambiar_expresion("escuchando")
@@ -186,10 +229,11 @@ def _ciclo_preguntas() -> bool | None:
             intentos_sin_respuesta += 1
             if intentos_sin_respuesta >= INTENTOS_MAX:
                 cambiar_expresion("hablando")
-                hablar_despedida()
+                time.sleep(3)
+                hablar(f["despedida"])
                 return False
             cambiar_expresion("hablando")
-            hablar_no_entendio()
+            hablar(f["no_entendio"])
             continue
 
         intentos_sin_respuesta = 0
@@ -201,12 +245,14 @@ def _ciclo_preguntas() -> bool | None:
 
         if any(k in p for k in _PALABRAS_ADIOS):
             cambiar_expresion("hablando")
-            hablar_despedida()
+            time.sleep(3)
+            hablar(f["despedida"])
             return True
 
         if any(k in p for k in _PALABRAS_SALIDA):
             cambiar_expresion("hablando")
-            hablar_despedida()
+            time.sleep(3)
+            hablar(f["despedida"])
             return False
 
         cambiar_expresion("pensando")
@@ -218,7 +264,9 @@ def _ciclo_preguntas() -> bool | None:
 def ciclo_interaccion() -> bool | None:
     """
     Flujo completo con un visitante.
-    Retorna True si el programa debe terminar (se dijo adiós).
+    Retorna True  → terminar el programa (se dijo adiós)
+            False → volver a esperar a un visitante (PIR)
+            None  → reiniciar la interacción de inmediato (se dijo "mexa")
     """
     limpiar_historial()
     orientarse_a_usuario(posicion_cara())
@@ -253,11 +301,12 @@ def ciclo_interaccion() -> bool | None:
         else:
             intentos += 1
             cambiar_expresion("hablando")
-            hablar_no_entendio()
+            hablar(f["no_entendio"])
 
     if video_info is None:
         cambiar_expresion("hablando")
-        hablar_despedida()
+        time.sleep(3)
+        hablar(f["despedida"])
         return False
 
     ruta_video, nombre_civ_es = video_info
@@ -273,40 +322,44 @@ def ciclo_interaccion() -> bool | None:
     cambiar_expresion("hablando")
     hablar(f["post_video"].format(nombre=nombre_civ))
 
-    # 6 y 7. Ciclo de preguntas con IA + despedida
-    _ciclo_preguntas()
-    return False
+    # 6 y 7. Ciclo de preguntas con IA + despedida.
+    # Propaga el resultado: True=adiós (apagar), False=esperar persona,
+    # None=reiniciar la interacción de inmediato (alguien dijo "mexa").
+    return _ciclo_preguntas(f)
 
 def ciclo_principal():
     """
-    Flujo lineal: espera una persona, hace una interacción, queda en pausa con cara.
+    Flujo continuo de exhibición: espera a un visitante (PIR), lo atiende y,
+    al terminar, vuelve a esperar al siguiente. Según lo que retorne
+    ciclo_interaccion(): True=apagar MEXA, False=esperar al siguiente,
+    None=reiniciar la interacción de inmediato (alguien dijo "mexa").
     """
     print("[MAIN] MEXA en espera de visitantes...")
     _ultimo_check_temp = 0.0
 
     try:
-        # Esperar al primer visitante
-        while not detectar_persona():
-            ahora = time.time()
-            if ahora - _ultimo_check_temp >= INTERVALO_TEMP_S:
-                controlar_por_temperatura()
-                _ultimo_check_temp = ahora
-            time.sleep(0.5)
-
-        print("[MAIN] ¡Persona detectada! Iniciando interacción.")
-        time.sleep(0.5)
-
-        if hay_obstaculo(DISTANCIA_MINIMA_CM):
-            print("[MAIN] Obstáculo muy cerca, no me muevo.")
-            hablar("Perdón, estoy muy cerca de algo. Por favor dame un poco de espacio.")
-        else:
-            ciclo_interaccion()
-
-        # Queda en pausa mostrando solo la cara
-        pantalla_bienvenida()
-        print("[MAIN] Interacción completada. Cara activa. Ctrl+C para salir.")
         while True:
-            time.sleep(1)
+            # Esperar a un visitante; mientras tanto, controlar temperatura.
+            while not detectar_persona():
+                ahora = time.time()
+                if ahora - _ultimo_check_temp >= INTERVALO_TEMP_S:
+                    controlar_por_temperatura()
+                    _ultimo_check_temp = ahora
+                time.sleep(0.5)
+
+            print("[MAIN] ¡Persona detectada! Iniciando interacción.")
+
+            # Atender al visitante. None = reiniciar de inmediato (dijo "mexa").
+            terminar = ciclo_interaccion()
+            while terminar is None:
+                terminar = ciclo_interaccion()
+
+            if terminar:                # True → adiós: apagar MEXA
+                break
+
+            # False → volver a esperar al siguiente visitante.
+            pantalla_bienvenida()
+            print("[MAIN] Interacción completada. Esperando al siguiente visitante...")
 
     except KeyboardInterrupt:
         print("\n[MAIN] Interrupción detectada (Ctrl+C).")

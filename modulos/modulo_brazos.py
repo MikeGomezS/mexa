@@ -3,8 +3,9 @@
 #  Hardware: 2x Servo + Arduino (USB Serial)
 #
 #  CONEXIONES ARDUINO (ver arduino/mexa/mexa.ino):
-#    Brazo izquierdo → D9
-#    Brazo derecho   → D10
+#    Brazo izquierdo → D10
+#    Brazo derecho   → D11
+#    (D2–D9 los usan los 4 motores DC)
 #
 #  PROTOCOLO SERIAL (manejado por el firmware unificado):
 #    H → iniciar animación (hablando)
