@@ -23,24 +23,31 @@ _detector = cv2.CascadeClassifier(
 )
 
 def iniciar_camara():
+    """Inicia la cámara. Si no hay cámara conectada, deja cam=None y MEXA
+    sigue funcionando sin seguimiento de cara (no aborta el arranque)."""
     global cam
-    cam = Picamera2()
-    config = cam.create_preview_configuration(
-        main={"size": (1280, 720), "format": "RGB888"}
-    )
-    cam.configure(config)
-    # Autofocus continuo — característica principal de la Arducam Módulo 3
-    cam.set_controls({
-        "AfMode": 2,   # 0=manual, 1=single, 2=continuo
-        "AfSpeed": 1,  # 0=normal, 1=rápido
-    })
-    cam.start()
-    print("[CAMARA] Arducam Módulo 3 iniciada con autofocus continuo.")
+    try:
+        cam = Picamera2()
+        config = cam.create_preview_configuration(
+            main={"size": (1280, 720), "format": "RGB888"}
+        )
+        cam.configure(config)
+        # Autofocus continuo — característica principal de la Arducam Módulo 3
+        cam.set_controls({
+            "AfMode": 2,   # 0=manual, 1=single, 2=continuo
+            "AfSpeed": 1,  # 0=normal, 1=rápido
+        })
+        cam.start()
+        print("[CAMARA] Arducam Módulo 3 iniciada con autofocus continuo.")
+    except Exception as e:
+        cam = None
+        print(f"[CAMARA] No se pudo iniciar la cámara ({e}). "
+              "Continúo sin seguimiento de cara.")
 
 def capturar_frame():
-    """Captura un frame de la cámara y lo regresa como array."""
+    """Captura un frame de la cámara. Devuelve None si no hay cámara."""
     if cam is None:
-        iniciar_camara()
+        return None
     return cam.capture_array()
 
 def _buscar_caras(frame):
@@ -54,6 +61,8 @@ def detectar_cara(frame=None) -> bool:
     """Regresa True si detecta al menos una cara en la imagen."""
     if frame is None:
         frame = capturar_frame()
+    if frame is None:
+        return False
     caras = _buscar_caras(frame)
     if len(caras) > 0:
         print(f"[CAMARA] {len(caras)} cara(s) detectada(s).")
@@ -67,6 +76,8 @@ def posicion_cara(frame=None):
     """
     if frame is None:
         frame = capturar_frame()
+    if frame is None:
+        return None
     caras = _buscar_caras(frame)
     if len(caras) == 0:
         return None
