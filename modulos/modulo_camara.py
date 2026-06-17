@@ -16,6 +16,13 @@ import cv2
 
 cam = None
 
+# Timeout (segundos) para capturar un frame. capture_array() se cuelga
+# INDEFINIDAMENTE si el frontend CSI deja de transmitir (p. ej. cable FFC
+# flojo): el job queda esperando un frame que nunca llega. Con timeout, MEXA
+# degrada con gracia (sigue sin seguimiento de cara) en vez de congelarse.
+# Un frame normal llega en decenas de ms; 2s es margen de sobra.
+CAPTURA_TIMEOUT_S = 2.0
+
 # CascadeClassifier se carga una sola vez al importar el módulo.
 # Recrearlo en cada llamada cargaba el XML del disco en cada frame.
 _detector = cv2.CascadeClassifier(
@@ -45,10 +52,18 @@ def iniciar_camara():
               "Continúo sin seguimiento de cara.")
 
 def capturar_frame():
-    """Captura un frame de la cámara. Devuelve None si no hay cámara."""
+    """Captura un frame de la cámara. Devuelve None si no hay cámara o si la
+    captura excede CAPTURA_TIMEOUT_S (p. ej. cable CSI flojo: evita que MEXA
+    se congele esperando un frame que no llega)."""
     if cam is None:
         return None
-    return cam.capture_array()
+    try:
+        job = cam.capture_array(wait=False)
+        return cam.wait(job, timeout=CAPTURA_TIMEOUT_S)
+    except TimeoutError:
+        print(f"[CAMARA] Captura excedió {CAPTURA_TIMEOUT_S}s "
+              "(¿cable CSI flojo?). Continúo sin frame.")
+        return None
 
 def _buscar_caras(frame):
     """Detecta caras en un frame usando el detector Haar cargado al inicio."""
