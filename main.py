@@ -38,14 +38,12 @@ from modulos.modulo_camara      import iniciar_camara, posicion_cara, apagar_cam
 from modulos.modulo_proyector   import (iniciar_proyector, mostrar_segun_tema,
                                         pantalla_bienvenida, cambiar_expresion,
                                         apagar_proyector, reproducir_video, CARPETA_VIDEOS)
-from modulos.modulo_ventiladores import iniciar_ventiladores, encender_siempre, controlar_por_temperatura
 from modulos.modulo_brazos      import iniciar_brazos, cerrar_brazos
 from modulos.conexion_arduino   import cerrar_conexion
 
 # ── Configuración ────────────────────────────────────────────
 TIEMPO_ESPERA_USUARIO = 30   # segundos antes de despedirse si no habla
 INTENTOS_MAX          = 3    # intentos de escuchar antes de despedirse
-INTERVALO_TEMP_S      = 10   # segundos entre cada lectura de temperatura
 
 # ── Civilizaciones disponibles ───────────────────────────────
 # Cada entrada: palabra_clave → (ruta_video_es, ruta_video_en, nombre_para_hablar)
@@ -147,8 +145,6 @@ def iniciar_todo():
     iniciar_motores()
     iniciar_camara()
     iniciar_proyector()
-    iniciar_ventiladores()
-    encender_siempre()   # ventiladores siempre ON para el demo
     iniciar_brazos()
 
     pantalla_bienvenida()
@@ -335,16 +331,11 @@ def ciclo_principal():
     None=reiniciar la interacción de inmediato (alguien dijo "mexa").
     """
     print("[MAIN] MEXA en espera de visitantes...")
-    _ultimo_check_temp = 0.0
 
     try:
         while True:
-            # Esperar a un visitante; mientras tanto, controlar temperatura.
+            # Esperar a un visitante.
             while not detectar_persona():
-                ahora = time.time()
-                if ahora - _ultimo_check_temp >= INTERVALO_TEMP_S:
-                    controlar_por_temperatura()
-                    _ultimo_check_temp = ahora
                 time.sleep(0.5)
 
             print("[MAIN] ¡Persona detectada! Iniciando interacción.")
