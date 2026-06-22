@@ -34,7 +34,7 @@ from modulos.modulo_ia          import (generar_respuesta_stream,
 from modulos.modulo_tts         import hablar, hablar_stream, presintetizar
 from modulos.modulo_sensores    import iniciar_sensores, detectar_persona
 from modulos.modulo_motores     import iniciar_motores, detener, orientarse_a_usuario, mover_por_tiempo
-from modulos.modulo_camara      import iniciar_camara, posicion_cara, apagar_camara
+from modulos.modulo_camara      import iniciar_camara, posicion_cara, localizar_cara, apagar_camara
 from modulos.modulo_proyector   import (iniciar_proyector, mostrar_segun_tema,
                                         pantalla_bienvenida, cambiar_expresion,
                                         apagar_proyector, reproducir_video, CARPETA_VIDEOS)
@@ -44,7 +44,17 @@ from modulos.conexion_arduino   import cerrar_conexion
 # ── Configuración ────────────────────────────────────────────
 TIEMPO_ESPERA_USUARIO = 30   # segundos antes de despedirse si no habla
 INTENTOS_MAX          = 3    # intentos de escuchar antes de despedirse
-AVANCE_PERSONA_S      = 3.0  # segundos que avanza al frente al detectar persona
+
+# ── Acercamiento con cámara (lazo cerrado) ───────────────────
+# Reemplaza el avance ciego de tiempo fijo: MEXA centra al visitante Y se le
+# acerca usando el TAMAÑO de la cara como proxy de distancia (cara grande=cerca).
+# OJO: estos valores son punto de partida; HAY QUE CALIBRARLOS en el robot real
+# (dependen de la lente, la altura de la cámara y la velocidad de los motores).
+ACERCAMIENTO_TIMEOUT_S  = 8.0   # tope duro de seguridad: nunca acercarse más que esto
+TAMANO_CARA_OBJETIVO    = 0.40  # alto_cara/alto_frame al que se considera "cerca" y frena
+PULSO_AVANCE_S          = 0.4   # duración de cada pulso de avance al centrar+acercar
+PULSO_GIRO_S            = 0.25  # duración de cada pulso de giro para centrar
+MAX_MISSES_ACERCAMIENTO = 6     # frames sin cara seguidos -> abandonar el acercamiento
 
 # ── Civilizaciones disponibles ───────────────────────────────
 # Cada entrada: palabra_clave → (ruta_video_es, ruta_video_en, nombre_para_hablar)
@@ -324,6 +334,49 @@ def ciclo_interaccion() -> bool | None:
     # None=reiniciar la interacción de inmediato (alguien dijo "mexa").
     return _ciclo_preguntas(f)
 
+def acercarse_a_usuario():
+    """Lazo cerrado con cámara: centra al visitante y se le acerca un poco.
+
+    Usa el tamaño de la cara como proxy de distancia. En cada tick:
+      - sin cara       -> no se mueve; si la pierde MAX_MISSES seguidas, abandona.
+      - descentrado    -> pulso de giro hacia ese lado (centrar tiene prioridad).
+      - centrado+lejos -> pulso de avance.
+      - centrado+cerca -> (tamano >= TAMANO_CARA_OBJETIVO) frena y termina.
+
+    Cortes de seguridad: ACERCAMIENTO_TIMEOUT_S y la pérdida sostenida de cara.
+    Cada pulso ya frena solo (mover_por_tiempo termina en detener()), así que el
+    patrón es pulso→frenar→sensar→pulso: MEXA nunca avanza a ciegas sin mirar."""
+    fin = time.time() + ACERCAMIENTO_TIMEOUT_S
+    misses = 0
+    primera_cara = True
+    while time.time() < fin:
+        lectura = localizar_cara()
+        if lectura is None:
+            misses += 1
+            if misses >= MAX_MISSES_ACERCAMIENTO:
+                print("[MAIN] Acercamiento: cara perdida, freno.")
+                break
+            continue
+        misses = 0
+        posicion, tamano = lectura
+        # Tamaño al que MEXA ENGANCHA por primera vez al visitante: es el dato
+        # de calibración clave (¿a qué distancia detecta cuando dispara el PIR?).
+        if primera_cara:
+            print(f"[MAIN] Acercamiento: primera cara en pos={posicion}, "
+                  f"tamaño={tamano:.0%} (objetivo={TAMANO_CARA_OBJETIVO:.0%}).")
+            primera_cara = False
+        if tamano >= TAMANO_CARA_OBJETIVO:
+            print(f"[MAIN] Acercamiento: persona cerca (cara={tamano:.0%}), freno.")
+            break
+        if posicion == "izquierda":
+            mover_por_tiempo("izquierda", PULSO_GIRO_S)
+        elif posicion == "derecha":
+            mover_por_tiempo("derecha", PULSO_GIRO_S)
+        else:
+            mover_por_tiempo("adelante", PULSO_AVANCE_S)
+    detener()
+
+
 def ciclo_principal():
     """
     Flujo continuo de exhibición: espera a un visitante (PIR), lo atiende y,
@@ -341,8 +394,8 @@ def ciclo_principal():
 
             print("[MAIN] ¡Persona detectada! Iniciando interacción.")
 
-            # Avanzar al frente hacia la persona detectada (frena solo al terminar).
-            mover_por_tiempo("adelante", AVANCE_PERSONA_S)
+            # Centrar y acercarse al visitante con la cámara (lazo cerrado).
+            acercarse_a_usuario()
 
             # Atender al visitante. None = reiniciar de inmediato (dijo "mexa").
             terminar = ciclo_interaccion()
