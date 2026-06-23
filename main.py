@@ -41,6 +41,7 @@ from modulos.modulo_proyector   import (iniciar_proyector, mostrar_segun_tema,
                                         apagar_proyector, reproducir_video, CARPETA_VIDEOS)
 from modulos.modulo_brazos      import iniciar_brazos, cerrar_brazos
 from modulos.conexion_arduino   import cerrar_conexion
+from modulos.registro_camino    import RegistroCamino, retroceder
 
 # ── Configuración ────────────────────────────────────────────
 TIEMPO_ESPERA_USUARIO = 30   # segundos antes de despedirse si no habla
@@ -381,7 +382,13 @@ def acercarse_a_usuario():
 
     Cortes de seguridad: ACERCAMIENTO_TIMEOUT_S acota TODA la maniobra. El avance
     continuo deja los motores en marcha; sólo se frena para girar, al alcanzar el
-    techo de tamaño, o al terminar."""
+    techo de tamaño, o al terminar.
+
+    REGISTRA el recorrido: cada comando de motor queda anotado con su
+    timestamp y se devuelve como lista de (comando, timestamp), para que
+    MEXA pueda RETROCEDER al punto de partida tras atender al visitante."""
+    registro = RegistroCamino()
+    registro.iniciar()  # engancha la capa serial: anota cada F/B/R/L/S
     fin = time.time() + ACERCAMIENTO_TIMEOUT_S
     misses = 0
     primera_cara = True
@@ -444,6 +451,8 @@ def acercarse_a_usuario():
         frenar()
         print("[MAIN] Acercamiento: TIMEOUT, freno.")
     detener()
+    registro.finalizar()  # deja de escuchar y cierra el último tramo
+    return registro.eventos
 
 
 def ciclo_principal():
@@ -464,12 +473,16 @@ def ciclo_principal():
             print("[MAIN] ¡Persona detectada! Iniciando interacción.")
 
             # Centrar y acercarse al visitante con la cámara (lazo cerrado).
-            acercarse_a_usuario()
+            # Guarda el recorrido para poder volver al punto de partida.
+            camino = acercarse_a_usuario()
 
             # Atender al visitante. None = reiniciar de inmediato (dijo "mexa").
             terminar = ciclo_interaccion()
             while terminar is None:
                 terminar = ciclo_interaccion()
+
+            # Deshacer el acercamiento: MEXA retrocede a donde empezó.
+            retroceder(camino)
 
             if terminar:                # True → adiós: apagar MEXA
                 break

@@ -16,6 +16,16 @@ from .config import ARDUINO_PUERTO, ARDUINO_BAUDRATE
 _serial = None
 _rx_buffer = ""          # acumula bytes hasta tener líneas completas
 _presencia = False       # último estado de presencia reportado por el Arduino
+_observador = None       # callback(cmd) opcional: ve cada comando enviado
+                         # (lo usa registro_camino para anotar el recorrido)
+
+
+def set_observador(fn):
+    """Registra (o limpia con None) un observador que recibe CADA comando
+    enviado al Arduino. Es el gancho que usa RegistroCamino para anotar el
+    camino sin acoplar la capa serial a la lógica de motores."""
+    global _observador
+    _observador = fn
 
 
 def iniciar_conexion():
@@ -36,6 +46,10 @@ def iniciar_conexion():
 
 def enviar(cmd: str):
     """Envía un comando de una letra al Arduino (agrega '\\n')."""
+    if _observador is not None:
+        # Anota la INTENCIÓN de movimiento con su timestamp, aunque el
+        # serial esté caído: el camino y su inverso quedan consistentes.
+        _observador(cmd)
     if _serial and _serial.is_open:
         try:
             _serial.write((cmd + "\n").encode())
