@@ -15,3 +15,6 @@ media/
 
 # Runtime / locks
 .claude/scheduled_tasks.lock
+
+# Frames de diagnóstico de cámara (artefactos de tests, se regeneran)
+tests/diag_frames/

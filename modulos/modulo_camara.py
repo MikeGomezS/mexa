@@ -11,6 +11,8 @@
 #    (el puerto tiene una pequeña palanca que se jala para soltar)
 # ============================================================
 
+import os
+
 from picamera2 import Picamera2
 import cv2
 
@@ -23,10 +25,24 @@ cam = None
 # Un frame normal llega en decenas de ms; 2s es margen de sobra.
 CAPTURA_TIMEOUT_S = 2.0
 
-# CascadeClassifier se carga una sola vez al importar el módulo.
-# Recrearlo en cada llamada cargaba el XML del disco en cada frame.
-_detector = cv2.CascadeClassifier(
-    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+# Detector de caras YuNet (DNN, OpenCV FaceDetectorYN). Reemplaza al Haar
+# clásico, que en este entorno (fondo cargado, contraluz, persona en
+# movimiento) inventaba falsos positivos sobre sillas/reflejos/ropa y perdía
+# la cara real con el blur del movimiento. YuNet es robusto al blur y al
+# contraluz y entrega un SCORE de confianza por cara: el lazo de acercamiento
+# —que mueve los motores— sólo actúa sobre caras de alta confianza, nunca
+# sobre un fantasma. Se carga una sola vez al importar el módulo.
+#
+# score_threshold ALTO a propósito: este detector alimenta un lazo que MUEVE
+# el robot; preferimos un miss (no moverse este tick) antes que perseguir una
+# detección dudosa. El suavizado temporal lo aporta el filtro de persistencia.
+_YUNET_MODELO = os.path.join(
+    os.path.dirname(__file__), "modelos_vision",
+    "face_detection_yunet_2023mar.onnx"
+)
+_SCORE_MIN = 0.7   # confianza mínima [0,1] para aceptar una cara
+_detector = cv2.FaceDetectorYN.create(
+    _YUNET_MODELO, "", (1280, 720), score_threshold=_SCORE_MIN
 )
 
 # --- Filtro de persistencia (debounce temporal) ------------------------------
@@ -117,11 +133,21 @@ def capturar_frame():
         return None
 
 def _buscar_caras(frame):
-    """Detecta caras en un frame usando el detector Haar cargado al inicio."""
-    gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-    return _detector.detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60)
-    )
+    """Detecta caras en un frame con YuNet. Devuelve una lista de cajas
+    (x, y, w, h) en píxeles, sólo de las caras con score >= _SCORE_MIN (el
+    filtrado por confianza lo hace YuNet internamente vía score_threshold).
+
+    YuNet espera la imagen en BGR; el frame de picamera2 viene en RGB
+    (verificado: 'RGB888' entrega RGB real en esta config), así que se
+    convierte. setInputSize debe declarar el tamaño real del frame en cada
+    llamada por si cambiara la resolución."""
+    h, w = frame.shape[:2]
+    _detector.setInputSize((w, h))
+    bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    _, caras = _detector.detect(bgr)
+    if caras is None:
+        return []
+    return [(int(x), int(y), int(cw), int(ch)) for x, y, cw, ch, *_ in caras]
 
 def detectar_cara(frame=None) -> bool:
     """Regresa True si hay una cara presente de forma SOSTENIDA en el tiempo.
