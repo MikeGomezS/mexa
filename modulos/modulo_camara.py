@@ -35,7 +35,7 @@ CAPTURA_TIMEOUT_S = 2.0
 #
 # score_threshold ALTO a propósito: este detector alimenta un lazo que MUEVE
 # el robot; preferimos un miss (no moverse este tick) antes que perseguir una
-# detección dudosa. El suavizado temporal lo aporta el filtro de persistencia.
+# detección dudosa. El suavizado temporal lo aporta el lazo que la consume.
 _YUNET_MODELO = os.path.join(
     os.path.dirname(__file__), "modelos_vision",
     "face_detection_yunet_2023mar.onnx"
@@ -44,57 +44,6 @@ _SCORE_MIN = 0.7   # confianza mínima [0,1] para aceptar una cara
 _detector = cv2.FaceDetectorYN.create(
     _YUNET_MODELO, "", (1280, 720), score_threshold=_SCORE_MIN
 )
-
-# --- Filtro de persistencia (debounce temporal) ------------------------------
-# El detector Haar evalúa cada frame de forma AISLADA, sin memoria: pierde la
-# cara en frames sueltos (giro leve, poca luz, movimiento) y la recupera al
-# siguiente. Eso hace PARPADEAR el estado (el test marcó 22 cambios en 20s con
-# una persona quieta frente a la cámara). El parpadeo NO es del cable ni del
-# sensor: es del algoritmo.
-#
-# El filtro exige CONSISTENCIA temporal antes de cambiar el estado confirmado:
-#   - Pasa a "hay cara" sólo tras UMBRAL_PRESENCIA frames SEGUIDOS con cara.
-#   - Pasa a "sin cara" sólo tras UMBRAL_AUSENCIA  frames SEGUIDOS sin cara.
-# Así un miss aislado ya no tumba la detección, y un falso positivo aislado
-# tampoco la dispara. Es el patrón debounce clásico (igual que el de un botón).
-#
-# Umbrales ASIMÉTRICOS a propósito: confirmamos presencia rápido (no hacer
-# esperar al visitante) pero soltamos despacio (aguantar parpadeos breves).
-UMBRAL_PRESENCIA = 2   # frames seguidos con cara para CONFIRMAR presencia
-UMBRAL_AUSENCIA  = 4   # frames seguidos sin cara para CONFIRMAR ausencia
-
-_hits_seguidos = 0          # frames consecutivos con cara (crudo)
-_misses_seguidos = 0        # frames consecutivos sin cara (crudo)
-_presencia_confirmada = False  # estado ya filtrado que devuelve detectar_cara()
-
-
-def reiniciar_filtro():
-    """Resetea el debounce. Llamar al empezar una interacción nueva para que
-    no arrastre el estado de la persona anterior."""
-    global _hits_seguidos, _misses_seguidos, _presencia_confirmada
-    _hits_seguidos = 0
-    _misses_seguidos = 0
-    _presencia_confirmada = False
-
-
-def _actualizar_filtro(hay_cara_cruda: bool) -> bool:
-    """Alimenta el debounce con la detección CRUDA de un frame y devuelve el
-    estado de presencia ya FILTRADO. Sólo imprime en las transiciones reales."""
-    global _hits_seguidos, _misses_seguidos, _presencia_confirmada
-    antes = _presencia_confirmada
-    if hay_cara_cruda:
-        _hits_seguidos += 1
-        _misses_seguidos = 0
-        if _hits_seguidos >= UMBRAL_PRESENCIA:
-            _presencia_confirmada = True
-    else:
-        _misses_seguidos += 1
-        _hits_seguidos = 0
-        if _misses_seguidos >= UMBRAL_AUSENCIA:
-            _presencia_confirmada = False
-    if _presencia_confirmada != antes:
-        print(f"[CAMARA] Presencia {'CONFIRMADA' if _presencia_confirmada else 'PERDIDA'}.")
-    return _presencia_confirmada
 
 def iniciar_camara():
     """Inicia la cámara. Si no hay cámara conectada, deja cam=None y MEXA
@@ -148,21 +97,6 @@ def _buscar_caras(frame):
     if caras is None:
         return []
     return [(int(x), int(y), int(cw), int(ch)) for x, y, cw, ch, *_ in caras]
-
-def detectar_cara(frame=None) -> bool:
-    """Regresa True si hay una cara presente de forma SOSTENIDA en el tiempo.
-
-    No es la detección cruda de un frame: pasa por el filtro de persistencia
-    (ver _actualizar_filtro). Pensada para llamarse en un LOOP de polling —
-    cada llamada aporta un frame de evidencia. Una llamada suelta sólo mueve
-    los contadores un paso y no confirma nada por sí sola.
-
-    Un frame None (sin cámara o captura vencida) cuenta como 'sin cara':
-    si el CSI deja de transmitir, la presencia decae sola y no queda pegada."""
-    if frame is None:
-        frame = capturar_frame()
-    hay_cruda = frame is not None and len(_buscar_caras(frame)) > 0
-    return _actualizar_filtro(hay_cruda)
 
 # Nº de frames que muestrea posicion_cara() en su modo one-shot para votar la
 # posición por mayoría. La detección Haar es ruidosa frame a frame: con un solo

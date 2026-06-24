@@ -2,7 +2,7 @@
 Prueba del camino COMPLETO de la cámara Arducam Módulo 3 (IMX708) de MEXA:
 
     Picamera2 (puerto CSI) -> modulo_camara.capturar_frame()
-      -> detectar_cara() / posicion_cara()
+      -> localizar_cara() / posicion_cara()
 
 Valida en TRES etapas, de menor a mayor exigencia:
   1) ENUMERACIÓN: que la cámara arranque (cam != None tras iniciar_camara()).
@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from modulos.modulo_camara import (
     iniciar_camara,
     capturar_frame,
-    detectar_cara,
+    localizar_cara,
     posicion_cara,
     apagar_camara,
 )
@@ -75,8 +75,9 @@ def etapa_deteccion(dur: int) -> None:
     try:
         while time.time() < fin:
             frame = capturar_frame()
-            hay = detectar_cara(frame)
-            pos = posicion_cara(frame) if hay else None
+            lectura = localizar_cara(frame)   # (posicion, tamaño) o None
+            hay = lectura is not None
+            pos = lectura[0] if hay else None
 
             estado_actual = (hay, pos)
             if estado_actual != prev and prev is not None:
