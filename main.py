@@ -69,7 +69,9 @@ TAMANO_CARA_OBJETIVO    = 0.40  # techo de seguridad: si la cara llegara a verse
                                 # de grande, frena. Casi nunca se alcanza (la cara se
                                 # recorta antes ~25%); el freno real es la pérdida por
                                 # recorte + el empuje ciego de la fase 2.
-PULSO_GIRO_S            = 0.25  # giro corto que sub-rota: el centrado (zona 40/60%) se auto-corrige
+PULSO_GIRO_S            = 0.80  # barrido por paso: más alto = gira menos entrecortado, pero
+                                # si se pasa del centro oscila (zona 40/60% lo auto-corrige).
+                                # Subido 0.25->0.80 para que el giro se sienta más fluido.
 MAX_MISSES_ACERCAMIENTO = 6     # frames sin cara seguidos -> fin de la fase visual
 SETTLE_ACERCAMIENTO_S   = 0.35  # respiro anti-blur SÓLO tras un giro: deja asentar
                                 # robot+cámara antes de re-sensar. SIN esto, el frame
