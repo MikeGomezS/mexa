@@ -209,9 +209,11 @@ def apagar_todo():
     GPIO.cleanup()
     print("[MAIN] MEXA apagado correctamente.")
 
-_PALABRAS_ADIOS   = {"adios", "adiós"}
-_PALABRAS_SALIDA  = {"bye", "hasta luego", "no", "no gracias", "nada", "ninguna"}
-_PALABRAS_REINICIO = {"mexa", "mesa"}  # "mesa" es como Vosk suele transcribir "mexa"
+_PALABRAS_APAGAR  = {"terminar", "terminemos"}  # apaga MEXA por completo
+_PALABRAS_SALIDA  = {"adios", "adiós", "bye", "hasta luego", "no", "no gracias", "nada", "ninguna"}
+# Reinicio en el lugar: frases INTENCIONALES, nunca el nombre del robot ("mexa")
+# ni palabras comunes ("mesa"), que disparaban falsos positivos al ser nombrado.
+_PALABRAS_REINICIO = {"empecemos de nuevo", "empecemos", "empezar de nuevo", "reiniciar"}
 
 
 def _seleccionar_idioma() -> str:
@@ -245,9 +247,9 @@ def _detectar_civilizacion(texto: str, idioma: str) -> tuple[str, str] | None:
 def _ciclo_preguntas(f: dict) -> bool | None:
     """
     Escucha y responde preguntas, usando las frases del idioma elegido (f).
-    Retorna True  → terminar programa (adiós)
-            False → volver a esperar PIR
-            None  → reiniciar ciclo_interaccion inmediatamente (se dijo "mexa")
+    Retorna True  → terminar programa (se dijo "terminar")
+            False → volver a esperar PIR (se dijo "adios" u otra salida)
+            None  → reiniciar ciclo_interaccion inmediatamente (se dijo "empecemos de nuevo")
     """
     tiempo_ultimo = time.time()
     intentos_sin_respuesta = 0
@@ -280,7 +282,7 @@ def _ciclo_preguntas(f: dict) -> bool | None:
         if any(k in p for k in _PALABRAS_REINICIO):
             return None
 
-        if any(k in p for k in _PALABRAS_ADIOS):
+        if any(k in p for k in _PALABRAS_APAGAR):
             cambiar_expresion("hablando")
             time.sleep(3)
             hablar(f["despedida"])
@@ -301,9 +303,9 @@ def _ciclo_preguntas(f: dict) -> bool | None:
 def ciclo_interaccion() -> bool | None:
     """
     Flujo completo con un visitante.
-    Retorna True  → terminar el programa (se dijo adiós)
-            False → volver a esperar a un visitante (PIR)
-            None  → reiniciar la interacción de inmediato (se dijo "mexa")
+    Retorna True  → terminar el programa (se dijo "terminar")
+            False → volver a esperar a un visitante (PIR; se dijo "adios" u otra salida)
+            None  → reiniciar la interacción de inmediato (se dijo "empecemos de nuevo")
     """
     limpiar_historial()
     orientarse_a_usuario(posicion_cara())
@@ -360,8 +362,8 @@ def ciclo_interaccion() -> bool | None:
     hablar(f["post_video"].format(nombre=nombre_civ))
 
     # 6 y 7. Ciclo de preguntas con IA + despedida.
-    # Propaga el resultado: True=adiós (apagar), False=esperar persona,
-    # None=reiniciar la interacción de inmediato (alguien dijo "mexa").
+    # Propaga el resultado: True="terminar" (apagar), False=esperar persona,
+    # None=reiniciar la interacción de inmediato (alguien dijo "empecemos de nuevo").
     return _ciclo_preguntas(f)
 
 def acercarse_a_usuario():
@@ -462,7 +464,7 @@ def ciclo_principal():
     Flujo continuo de exhibición: espera a un visitante (PIR), lo atiende y,
     al terminar, vuelve a esperar al siguiente. Según lo que retorne
     ciclo_interaccion(): True=apagar MEXA, False=esperar al siguiente,
-    None=reiniciar la interacción de inmediato (alguien dijo "mexa").
+    None=reiniciar la interacción de inmediato (alguien dijo "empecemos de nuevo").
     """
     print("[MAIN] MEXA en espera de visitantes...")
 
@@ -478,7 +480,7 @@ def ciclo_principal():
             # Guarda el recorrido para poder volver al punto de partida.
             camino = acercarse_a_usuario()
 
-            # Atender al visitante. None = reiniciar de inmediato (dijo "mexa").
+            # Atender al visitante. None = reiniciar de inmediato (dijo "empecemos de nuevo").
             terminar = ciclo_interaccion()
             while terminar is None:
                 terminar = ciclo_interaccion()
@@ -486,7 +488,7 @@ def ciclo_principal():
             # Deshacer el acercamiento: MEXA retrocede a donde empezó.
             retroceder(camino)
 
-            if terminar:                # True → adiós: apagar MEXA
+            if terminar:                # True → "terminar": apagar MEXA
                 break
 
             # False → volver a esperar al siguiente visitante.
