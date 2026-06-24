@@ -42,6 +42,11 @@ _PALABRAS_SALIDA  = {"adios", "adiós", "bye", "hasta luego", "no", "no gracias"
 # Reinicio en el lugar: frases INTENCIONALES, nunca el nombre del robot ("mexa")
 # ni palabras comunes ("mesa"), que disparaban falsos positivos al ser nombrado.
 _PALABRAS_REINICIO = {"empecemos de nuevo", "empecemos", "empezar de nuevo", "reiniciar"}
+# Palabra para DESPERTAR a MEXA del reposo. Es una palabra REAL y distintiva
+# (Vosk la reconoce bien, a diferencia del nombre inventado "mexa") y de una
+# sola unidad (el oído no la corta a la mitad). Varias formas del verbo para
+# que dé igual si dicen "comencemos", "comenzar" o "comenzamos".
+_PALABRAS_ACTIVACION = {"comencemos", "comenzar", "comenzamos", "comienza"}
 
 
 def _dijo(frase: str, claves: set[str]) -> bool:
@@ -53,6 +58,21 @@ def _dijo(frase: str, claves: set[str]) -> bool:
     como "hasta luego" o "empecemos de nuevo"."""
     secuencia = " ".join(re.findall(r"\w+", frase.lower()))
     return any(re.search(rf"\b{re.escape(clave)}\b", secuencia) for clave in claves)
+
+
+def esperar_activacion() -> None:
+    """Reposo por voz: bloquea hasta oír la palabra de activación ("comencemos").
+
+    Escucha en bucle con Vosk e ignora todo lo demás. Es el estado dormido
+    entre visitantes: MEXA no detecta ni se mueve hasta que alguien la despierta.
+    Como sólo se escucha acá (no durante la charla), no choca con el resto de
+    los comandos de voz."""
+    print("[DIALOGO] MEXA en reposo. Decí 'comencemos' para activarla.")
+    while True:
+        frase = escuchar_pregunta(timeout=8)
+        if frase and _dijo(frase, _PALABRAS_ACTIVACION):
+            print("[DIALOGO] Activada por voz.")
+            return
 
 
 def _seleccionar_idioma() -> str:

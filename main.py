@@ -35,7 +35,7 @@ from modulos.modulo_proyector   import (iniciar_proyector, pantalla_bienvenida,
 from modulos.modulo_brazos      import iniciar_brazos, cerrar_brazos
 from modulos.conexion_arduino   import cerrar_conexion
 from modulos.navegacion         import acercarse_a_usuario, retroceder
-from modulos.dialogo            import ciclo_interaccion, Resultado
+from modulos.dialogo            import ciclo_interaccion, esperar_activacion, Resultado
 from modulos                    import contenido
 
 
@@ -105,20 +105,41 @@ def apagar_todo():
     print("[MAIN] MEXA apagado correctamente.")
 
 
+# Tras oír "comencemos", cuánto espera al PIR antes de volver a dormir (despertar falso).
+ACTIVACION_PIR_TIMEOUT_S = 20
+
+
+def _esperar_persona(timeout: float) -> bool:
+    """Espera a que el PIR detecte a alguien, hasta `timeout` segundos.
+    Devuelve True si apareció, False si venció el tiempo (nadie llegó)."""
+    fin = time.time() + timeout
+    while time.time() < fin:
+        if detectar_persona():
+            return True
+        time.sleep(0.5)
+    return False
+
+
 def ciclo_principal():
     """
-    Flujo continuo de exhibición: espera a un visitante (PIR), lo atiende y,
-    al terminar, vuelve a esperar al siguiente. Según el Resultado de
-    ciclo_interaccion(): APAGAR=apagar MEXA, ESPERAR=esperar al siguiente,
-    REINICIAR=reiniciar la interacción de inmediato (dijo "empecemos de nuevo").
+    Flujo de exhibición con activación por voz. MEXA duerme hasta que alguien
+    dice "comencemos"; entonces detecta (PIR), se acerca, atiende y, al terminar,
+    vuelve a dormir. Según el Resultado de ciclo_interaccion():
+    APAGAR=apagar MEXA, ESPERAR=volver a reposo, REINICIAR=reiniciar en el lugar.
     """
-    print("[MAIN] MEXA en espera de visitantes...")
+    print("[MAIN] MEXA lista. Esperando activación por voz...")
 
     try:
         while True:
-            # Esperar a un visitante.
-            while not detectar_persona():
-                time.sleep(0.5)
+            # Reposo: dormir hasta oír "comencemos".
+            esperar_activacion()
+
+            # Activada: empezar la detección de la persona (PIR). Si nadie
+            # aparece (despertar falso), volver a dormir en vez de colgarse.
+            if not _esperar_persona(ACTIVACION_PIR_TIMEOUT_S):
+                print("[MAIN] Activada pero nadie apareció. Vuelvo a reposo.")
+                pantalla_bienvenida()
+                continue
 
             print("[MAIN] ¡Persona detectada! Iniciando interacción.")
 
@@ -137,9 +158,9 @@ def ciclo_principal():
             if resultado is Resultado.APAGAR:
                 break
 
-            # ESPERAR → volver a esperar al siguiente visitante.
+            # ESPERAR → volver a reposo, esperando otra activación por voz.
             pantalla_bienvenida()
-            print("[MAIN] Interacción completada. Esperando al siguiente visitante...")
+            print("[MAIN] Interacción completada. Volviendo a reposo...")
 
     except KeyboardInterrupt:
         print("\n[MAIN] Interrupción detectada (Ctrl+C).")
