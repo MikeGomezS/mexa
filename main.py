@@ -19,6 +19,14 @@
 #     curl -fsSL https://ollama.com/install.sh | sh
 #     ollama pull llama3.2:3b
 #
+#  2b. Descargar los DOS modelos de voz (Vosk), desde
+#     https://alphacephei.com/vosk/models — descomprimir en la raíz
+#     del proyecto con estos nombres exactos:
+#       vosk-model-small-es-0.42    -> modelo_vosk_es/
+#       vosk-model-small-en-us-0.15 -> modelo_vosk_en/
+#     Sin el de inglés MEXA sigue arrancando, pero escucha todo con
+#     oído español (ver modulos/modulo_audio.py).
+#
 #  3. Conectar todos los componentes (motores/PIR/brazos van por el
 #     Arduino vía USB serial; la cámara al puerto CSI).
 # ============================================================

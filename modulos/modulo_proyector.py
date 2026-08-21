@@ -43,6 +43,8 @@ IMAGENES_POR_TEMA = {
     "templo mayor":   "azteca.jpg",
     "maya":           "maya.jpg",
     "chichen itza":   "maya.jpg",
+    "aztec":          "azteca.jpg",   # forma inglesa: "Aztec(s)"
+    "pyramid":        "teotihuacan.jpg",
     "independencia":  "independencia.jpg",
     "hidalgo":        "independencia.jpg",
     "morelos":        "independencia.jpg",

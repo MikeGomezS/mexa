@@ -7,6 +7,7 @@ venv/
 
 # Assets pesados (no son código: se descargan/copian aparte)
 modelo_vosk_es/
+modelo_vosk_en/
 media/
 
 # Sistema

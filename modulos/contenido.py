@@ -32,6 +32,15 @@ CIVILIZACIONES: dict[str, tuple[str, str, str]] = {
     "zapotecas":    (_ESP + "/Zapotecas_esp.mp4",   _ENG + "/Zapotecas_eng.mp4",   "los Zapotecas"),
     "mixteca":      (_ESP + "/Mixtecas_esp.mp4",    _ENG + "/Mixtecas_eng.mp4",    "los Mixtecas"),
     "mixtecas":     (_ESP + "/Mixtecas_esp.mp4",    _ENG + "/Mixtecas_eng.mp4",    "los Mixtecas"),
+    # Formas en inglés. El modelo Vosk en-us transcribe "Aztecs", no
+    # "aztecas": sin estas claves, un visitante en inglés jamás elegía
+    # civilización. Se matchea por subcadena (ver detectar_civilizacion),
+    # así que el singular ya cubre el plural: "aztec" ⊂ "aztecs".
+    "aztec":        (_ESP + "/Aztecas_esp.mp4",     _ENG + "/Aztecas_eng.mp4",     "los Aztecas"),
+    "olmec":        (_ESP + "/Olmecas_esp.mp4",     _ENG + "/Olmecas_eng.mp4",     "los Olmecas"),
+    "toltec":       (_ESP + "/Toltecas_esp.mp4",    _ENG + "/Toltecas_eng.mp4",    "los Toltecas"),
+    "zapotec":      (_ESP + "/Zapotecas_esp.mp4",   _ENG + "/Zapotecas_eng.mp4",   "los Zapotecas"),
+    "mixtec":       (_ESP + "/Mixtecas_esp.mp4",    _ENG + "/Mixtecas_eng.mp4",    "los Mixtecas"),
 }
 
 NOMBRES_DISPONIBLES = ["los Mayas", "los Aztecas", "Teotihuacán", "los Olmecas", "los Toltecas", "los Zapotecas", "los Mixtecas"]
