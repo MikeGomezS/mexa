@@ -224,7 +224,7 @@ def etapa_color() -> None:
 def main() -> int:
     if not os.path.isdir(FRAMES) or not os.listdir(FRAMES):
         print(f"[TEST] No hay fotos en {FRAMES}/. Generalas con MEXA y la cámara:")
-        print("[TEST]   python3 tests/diagnostico_deteccion.py")
+        print("[TEST]   corré MEXA y mirá las líneas [CAMARA] Objetivo:")
         return 2
 
     print("=" * 62)
