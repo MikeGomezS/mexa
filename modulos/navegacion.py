@@ -10,7 +10,7 @@
 import time
 
 from .modulo_motores import detener, mover_por_tiempo, mover_adelante
-from .modulo_camara  import localizar_cara
+from .modulo_camara  import localizar_cara, reiniciar_objetivo
 from .registro_camino import RegistroCamino, retroceder  # re-export: retroceder
 
 # ── Acercamiento con cámara (drive-and-sense en dos fases) ────
@@ -56,6 +56,10 @@ AVANCE_CIEGO_FINAL_S    = 4.0   # segundos de empuje ciego. CALIBRAR: parate fre
 def acercarse_a_usuario():
     """Drive-and-sense en dos fases: MEXA centra al visitante y se le acerca.
 
+    Elige a UN visitante entre los que haya (el más cercano, de frente y
+    centrado — ver modulo_camara.localizar_cara) y se queda con él toda la
+    maniobra: cambiar de persona a mitad de camino haría zigzaguear a MEXA.
+
     FASE 1 (visual, avance CONTINUO). Usa el tamaño de la cara como proxy de
     distancia. En cada lectura:
       - centrado    -> avanza CONTINUO (no frena entre lecturas: sensa en marcha).
@@ -78,6 +82,9 @@ def acercarse_a_usuario():
     REGISTRA el recorrido: cada comando de motor queda anotado con su
     timestamp y se devuelve como lista de (comando, timestamp), para que
     MEXA pueda RETROCEDER al punto de partida tras atender al visitante."""
+    # Objetivo limpio: cada acercamiento elige a SU visitante desde cero,
+    # sin arrastrar el enganche del anterior (ver modulo_camara._Seguidor).
+    reiniciar_objetivo()
     registro = RegistroCamino()
     registro.iniciar()  # engancha la capa serial: anota cada F/B/R/L/S
     fin = time.time() + ACERCAMIENTO_TIMEOUT_S

@@ -25,14 +25,19 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import cv2
-from modulos.modulo_camara import iniciar_camara, capturar_frame, _YUNET_MODELO
+from modulos.modulo_camara import (iniciar_camara, capturar_frame,
+                                   _detector, _buscar_caras, _puntuar)
 
 SALIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "diag_frames")
 
 # Detector propio con umbral BAJO para ver hasta las detecciones dudosas.
 _SCORE_DIAG = 0.3
-_det = cv2.FaceDetectorYN.create(_YUNET_MODELO, "", (1280, 720),
-                                 score_threshold=_SCORE_DIAG)
+# Se BAJA el umbral del detector de producción en vez de crear otro: así el
+# diagnóstico mide exactamente la misma cadena que corre en la exhibición
+# (mismo detector, mismo puntaje, misma elección de objetivo) y además revela
+# las detecciones marginales que _SCORE_MIN descarta — que es justo lo que se
+# quiere ver al diagnosticar.
+_detector.setScoreThreshold(_SCORE_DIAG)
 
 
 def _clasificar(centro_x, ancho):
@@ -65,34 +70,39 @@ def main() -> None:
             continue
 
         alto, ancho = frame.shape[0], frame.shape[1]
-        bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # YuNet espera BGR
-        _det.setInputSize((ancho, alto))
-        _, caras = _det.detect(bgr)
-        caras = [] if caras is None else list(caras)
+        # El frame va a YuNet TAL CUAL: picamera2 en 'RGB888' entrega bytes en
+        # orden BGR, que es lo que el detector espera. La conversión RGB2BGR que
+        # había acá cruzaba los canales y hundía la detección (y dejaba las
+        # fotos guardadas con la piel azul). Ver modulos/modulo_camara.py.
+        anotado = frame.copy()
+        caras = _buscar_caras(frame)
         n = len(caras)
 
-        # Índice de la caja MÁS GRANDE (la que el lazo elegiría con max área).
-        idx_grande = -1
+        # Índice de la cara que el lazo ELEGIRÍA de verdad: la de mayor puntaje
+        # (cercanía + frontalidad + centralidad), no la más grande.
+        idx_objetivo = -1
         if n > 0:
-            areas = [c[2] * c[3] for c in caras]
-            idx_grande = max(range(n), key=lambda k: areas[k])
+            puntajes = [_puntuar(c, ancho, alto) for c in caras]
+            idx_objetivo = max(range(n), key=lambda k: puntajes[k])
 
         resumen = []
         for k, c in enumerate(caras):
-            x, y, w, h = int(c[0]), int(c[1]), int(c[2]), int(c[3])
-            score = float(c[-1])
-            tam = h / alto
-            pos = _clasificar(x + w // 2, ancho)
-            es_grande = (k == idx_grande)
-            color = (0, 0, 255) if es_grande else (0, 220, 220)  # rojo / amarillo
-            cv2.rectangle(bgr, (x, y), (x + w, y + h), color, 3)
-            cv2.putText(bgr, f"s={score:.2f} {tam:.0%} {pos}", (x, max(0, y - 8)),
+            tam = c.h / alto
+            pos = _clasificar(c.x + c.w // 2, ancho)
+            es_objetivo = (k == idx_objetivo)
+            color = (0, 0, 255) if es_objetivo else (0, 220, 220)  # rojo / amarillo
+            cv2.rectangle(anotado, (c.x, c.y), (c.x + c.w, c.y + c.h), color, 3)
+            cv2.putText(anotado,
+                        f"s={c.score:.2f} {tam:.0%} {pos} f={c.frontalidad:.2f} "
+                        f"p={puntajes[k]:.2f}",
+                        (c.x, max(0, c.y - 8)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
-            marca = "*" if es_grande else " "
-            resumen.append(f"{marca}s{score:.2f}/{tam:.0%}/{pos}")
+            marca = "*" if es_objetivo else " "
+            resumen.append(f"{marca}s{c.score:.2f}/{tam:.0%}/{pos}/f{c.frontalidad:.2f}"
+                           f"/p{puntajes[k]:.2f}")
 
         ruta = os.path.join(SALIDA, f"frame_{i:02d}.jpg")
-        cv2.imwrite(ruta, bgr)
+        cv2.imwrite(ruta, anotado)
         guardados += 1
         cajas_txt = ", ".join(resumen) if resumen else "(ninguna)"
         print(f"[DIAG] frame {i:02d}: {n} cara(s) [{cajas_txt}]  -> {ruta}")

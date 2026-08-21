@@ -17,7 +17,7 @@ from .modulo_ia        import (generar_respuesta_stream, limpiar_historial,
                                establecer_idioma)
 from .modulo_tts       import hablar, hablar_stream
 from .modulo_motores   import orientarse_a_usuario
-from .modulo_camara    import posicion_cara
+from .modulo_camara    import posicion_cara, reiniciar_objetivo
 from .modulo_proyector import mostrar_segun_tema, cambiar_expresion, reproducir_video
 from . import contenido
 
@@ -197,6 +197,10 @@ def ciclo_interaccion() -> Resultado:
             Resultado.REINICIAR → reiniciar la interacción de inmediato
     """
     limpiar_historial()
+    # MEXA acaba de moverse: el objetivo enganchado durante el acercamiento
+    # quedó anclado a coordenadas de ANTES del avance. Se suelta para que el
+    # voto de posicion_cara() vuelva a elegir a quien tiene ahora en frente.
+    reiniciar_objetivo()
     orientarse_a_usuario(posicion_cara())
 
     # 0. Selección de idioma
