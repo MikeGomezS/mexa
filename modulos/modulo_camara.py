@@ -232,6 +232,7 @@ class _Seguidor:
         mejor = max(caras, key=lambda c: puntajes[id(c)])
 
         if self.centro is None:               # sin objetivo: engancha al mejor
+            self._anunciar("elige", mejor, caras, puntajes, ancho, alto)
             return self._enganchar(mejor)
 
         actual = self._reencontrar(caras, ancho)
@@ -241,6 +242,7 @@ class _Seguidor:
 
         # Sigue siendo el objetivo salvo que otro lo supere por un margen claro.
         if puntajes[id(mejor)] > puntajes[id(actual)] + _MARGEN_CAMBIO:
+            self._anunciar("CAMBIA a", mejor, caras, puntajes, ancho, alto)
             return self._enganchar(mejor)
         return self._enganchar(actual)
 
@@ -264,7 +266,26 @@ class _Seguidor:
             return
         self.misses += 1
         if self.misses >= _MISSES_SOLTAR:
+            print(f"[CAMARA] Objetivo perdido {self.misses} lecturas seguidas: "
+                  f"lo suelto.")
             self.reiniciar()
+
+    def _anunciar(self, accion, elegida, caras, puntajes, ancho, alto) -> None:
+        """Deja ver EN VIVO a quién eligió MEXA y por qué, durante la corrida
+        real (no hace falta correr un diagnóstico aparte).
+
+        Sólo habla cuando pasa algo: al enganchar un objetivo nuevo y al
+        cambiar de persona. Imprimir cada frame ahogaría el resto del log —
+        el lazo de acercamiento sensa decenas de veces por segundo."""
+        print(f"[CAMARA] Objetivo: {accion} 1 de {len(caras)} cara(s) visible(s).")
+        for cara in sorted(caras, key=lambda c: -puntajes[id(c)]):
+            marca = "->" if cara is elegida else "  "
+            mira = ("de frente" if cara.frontalidad >= 0.9 else
+                    "de perfil" if cara.frontalidad <= 0.1 else "medio girada")
+            print(f"[CAMARA]   {marca} puntaje={puntajes[id(cara)]:.2f}  "
+                  f"tam={cara.h / alto:.0%}  "
+                  f"{_clasificar_horizontal(cara.x + cara.w // 2, ancho):<9} "
+                  f"{mira} (frontalidad={cara.frontalidad:.2f})")
 
 
 _seguidor = _Seguidor()

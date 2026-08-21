@@ -245,8 +245,9 @@ def main() -> int:
     print("  ✓ Todas las verificaciones pasaron.")
     print("  · PENDIENTE de validar en hardware: dos personas DISTINTAS de")
     print("    verdad (las escenas de varias personas se componen con caras")
-    print("    de la misma persona). Parate con alguien frente a MEXA y corré")
-    print("    python3 tests/diagnostico_deteccion.py para confirmarlo.")
+    print("    de la misma persona). Parate con alguien frente a MEXA, corré")
+    print("    python3 main.py y mirá las líneas [CAMARA] Objetivo: dicen a")
+    print("    quién eligió, con el puntaje de cada candidato.")
     return 0
 
 
