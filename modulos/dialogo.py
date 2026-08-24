@@ -7,6 +7,7 @@
 #  que le dice a `ciclo_principal` qué hacer después.
 # ============================================================
 
+import json
 import re
 import time
 from enum import Enum, auto
@@ -219,21 +220,35 @@ def ciclo_interaccion() -> Resultado:
     hablar(f["saludo_civ"].format(oferta=oferta))
 
     # 2. Escuchar la elección (con reintentos)
+    #
+    # Se oye con los DOS modelos sobre el MISMO audio, cada uno con la
+    # gramática cerrada de las palabras que sabe pronunciar. Dos razones:
+    #
+    #  1. El nombre de una civilización es un NOMBRE PROPIO, y el visitante
+    #     lo dice como le sale. "Olmecas", "Toltecas" y "Mixteca" viven en el
+    #     léxico español y en el inglés NO existen: sin el oído español, un
+    #     visitante que elige inglés no puede pedirlas jamás.
+    #  2. La gramática cerrada sube los aciertos de 19/72 a 46/72 y sostiene
+    #     el reconocimiento cuando entra ruido de sala.
+    #
+    # `detectar_civilizacion_multi` exige que los modelos no se contradigan
+    # antes de dar la elección por buena.
+    gramaticas = {i: json.dumps(g)
+                  for i, g in contenido.GRAMATICA_CIVILIZACIONES.items()}
     video_info = None
     intentos = 0
     while video_info is None and intentos < INTENTOS_MAX:
         cambiar_expresion("escuchando")
-        eleccion = escuchar_pregunta(timeout=10, idioma=idioma)
-        if eleccion:
-            video_info = contenido.detectar_civilizacion(eleccion, idioma)
-            if video_info is None:
-                intentos += 1
-                cambiar_expresion("hablando")
-                hablar(f["no_reconocio"].format(oferta=oferta))
-        else:
+        textos = escuchar_multilingue(10, list(gramaticas), gramaticas)
+        video_info = contenido.detectar_civilizacion_multi(textos, idioma)
+        if video_info is None:
             intentos += 1
             cambiar_expresion("hablando")
-            hablar(f["no_entendio"])
+            # Distinguir "no oí nada" de "oí algo que no era una civilización":
+            # al visitante le sirve saber si tiene que hablar más fuerte o
+            # elegir otra cosa.
+            hablar(f["no_entendio"] if not any(textos.values())
+                   else f["no_reconocio"].format(oferta=oferta))
 
     if video_info is None:
         cambiar_expresion("hablando")
