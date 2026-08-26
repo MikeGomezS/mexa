@@ -41,7 +41,18 @@ curl -fsSL https://ollama.com/install.sh | sh
 ollama pull llama3.2:3b
 ```
 
-## Paso 5 — Crear carpeta de imágenes
+## Paso 5 — Descargar el modelo de VAD (Silero)
+El VAD decide cuándo el visitante empezó y terminó de hablar. Sin este
+archivo MEXA sigue funcionando, pero degrada al VAD de energía, que es
+peor con ruido de sala (lo avisa por consola al arrancar).
+```
+mkdir -p media/vad
+curl -L -o media/vad/silero_vad.onnx \
+  https://raw.githubusercontent.com/snakers4/silero-vad/master/src/silero_vad/data/silero_vad.onnx
+```
+Son 2.3 MB y corre en CPU (0.26 ms por ventana de 32 ms en la Pi 5).
+
+## Paso 6 — Crear carpeta de imágenes
 ```
 mkdir -p media/imagenes
 ```
@@ -55,7 +66,7 @@ Agregar imágenes JPG con estos nombres exactos:
 - olmeca.jpg
 - mexico_general.jpg
 
-## Paso 6 — Ejecutar MEXA
+## Paso 7 — Ejecutar MEXA
 ```
 python3 main.py
 ```
@@ -73,5 +84,7 @@ Para detener: presionar Ctrl+C
 - GPIO 20  → Encoder Motor Derecho
 - GPIO 21  → Control transistor ventiladores
 - CSI      → Cámara Arducam Módulo 3
-- USB      → Micrófono USB 360°
+- USB      → Micrófono USB 360° (iTalk-02, MONO de 1 canal:
+             no hay dirección de llegada del sonido; ver
+             modulos/vad.py y tests/test_seleccion_objetivo.py)
 - micro-HDMI 1 → Proyector KACOTA HY300 Pro

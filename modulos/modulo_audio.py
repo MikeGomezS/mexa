@@ -20,8 +20,12 @@ import audioop
 import json
 import os
 import time
+
 import pyaudio
 from vosk import Model, KaldiRecognizer
+
+from . import vad
+from .vad import crear_detector, quitar_dc, registrar_ruido, umbral_actual
 
 _BASE_DIR = os.path.dirname(__file__)
 _MODELOS_DIR = {
@@ -31,9 +35,8 @@ _MODELOS_DIR = {
 _VOSK_RATE   = 16000   # Vosk siempre necesita 16 kHz
 _CHUNK       = 4096
 
-_SILENCIO_UMBRAL = 300   # RMS mínimo para considerar que hay voz (ajustar según mic)
-_SILENCIO_SEG    = 1.5   # segundos de silencio continuo para dejar de escuchar
-_MIN_HABLA_SEG   = 0.3   # segundos mínimos de habla antes de activar el VAD
+# El VAD vive en modulos/vad.py: cuándo hay voz es una decisión con su
+# propio modelo y sus propias constantes, y no depende de PyAudio.
 
 # ── Gramáticas cerradas para la pregunta de idioma ───────────
 # Una pregunta CERRADA merece un grafo CERRADO: en vez de elegir
@@ -146,6 +149,47 @@ def _vaciar_buffer(stream: pyaudio.Stream) -> None:
         pass
 
 
+def calibrar_ruido_ambiente(segundos: float = 1.5) -> int:
+    """Mide el ruido de la sala donde está MEXA y fija el umbral de voz.
+
+    Llamar al arrancar, con MEXA CALLADA y sin nadie hablándole: lo que se
+    mida acá es lo que MEXA va a considerar silencio. Si alguien habla
+    durante la medición el piso queda alto y MEXA arranca dura de oído;
+    no es grave —la ventana móvil lo corrige sola en las primeras
+    escuchas— pero conviene calibrar en paz.
+
+    Devuelve el umbral resultante. Si el micrófono falla, deja el que
+    había: no poder medir la sala no es motivo para no escuchar.
+    """
+    try:
+        stream = _obtener_stream()
+        _vaciar_buffer(stream)
+        _, native_rate = _obtener_dispositivo()
+    except Exception as e:
+        print(f"[AUDIO] No se pudo calibrar el ruido ({e}); umbral {umbral_actual()}.")
+        return umbral_actual()
+
+    # Se mide sobre el audio YA REMUESTREADO, que es exactamente el que
+    # va a ver el VAD. Medir a 44.1 kHz y decidir a 16 kHz sería comparar
+    # el ruido contra una regla distinta de la que lo va a juzgar.
+    muestras, estado = [], None
+    limite = time.time() + segundos
+    try:
+        while time.time() < limite:
+            data = stream.read(_CHUNK, exception_on_overflow=False)
+            if native_rate != _VOSK_RATE:
+                data, estado = audioop.ratecv(data, 2, 1, native_rate,
+                                              _VOSK_RATE, estado)
+            muestras.append(audioop.rms(quitar_dc(data), 2))
+    except Exception as e:
+        print(f"[AUDIO] Calibración interrumpida ({e}).")
+
+    registrar_ruido(muestras)
+    print(f"[AUDIO] Ruido de sala: {int(vad.piso_actual())} RMS "
+          f"({len(muestras)} chunks) → umbral de energía {umbral_actual()}")
+    return umbral_actual()
+
+
 # Precarga el modelo español al importar para evitar latencia en la
 # primera escucha. El inglés se carga bajo demanda (sólo si hay un
 # visitante que lo elige), para no pagar RAM ni arranque de más.
@@ -157,7 +201,8 @@ def _escuchar(timeout: float, recognizers: dict[str, KaldiRecognizer]) -> dict[s
 
     Es el motor común: lee el stream una sola vez y alimenta el mismo
     chunk a cada recognizer, así todos oyen EXACTAMENTE el mismo audio.
-    El VAD (energía RMS) decide cuándo el visitante dejó de hablar.
+    El VAD (modulos/vad.py) decide cuándo el visitante dejó de hablar,
+    con el ruido de sala medido hasta este momento como referencia.
 
     Retorna {clave: texto} con el resultado final de cada recognizer.
     """
@@ -172,11 +217,11 @@ def _escuchar(timeout: float, recognizers: dict[str, KaldiRecognizer]) -> dict[s
         print(f"[AUDIO] Error al preparar stream: {e}")
         return {clave: "" for clave in recognizers}
 
-    print("[AUDIO] Escuchando...")
-    limite          = time.time() + timeout
-    resample_state  = None
-    habla_inicio:    float | None = None
-    silencio_inicio: float | None = None
+    detector       = crear_detector()
+    limite         = time.time() + timeout
+    resample_state = None
+    print(f"[AUDIO] Escuchando... (ruido de sala {int(vad.piso_actual())} RMS, "
+          f"VAD: {detector})")
 
     try:
         while time.time() < limite:
@@ -186,27 +231,30 @@ def _escuchar(timeout: float, recognizers: dict[str, KaldiRecognizer]) -> dict[s
                 _stream = None  # se recreará en la próxima llamada
                 break
 
-            # VAD: calcular energía antes de remuestrear
-            rms   = audioop.rms(data, 2)
-            ahora = time.time()
-            if rms >= _SILENCIO_UMBRAL:
-                if habla_inicio is None:
-                    habla_inicio = ahora
-                silencio_inicio = None
-            elif habla_inicio and (ahora - habla_inicio) >= _MIN_HABLA_SEG:
-                if silencio_inicio is None:
-                    silencio_inicio = ahora
-                elif ahora - silencio_inicio >= _SILENCIO_SEG:
-                    break  # silencio prolongado → dejar de escuchar
-
+            # Remuestrear PRIMERO: el VAD y Vosk tienen que oír exactamente
+            # la misma señal, y Silero sólo trabaja a 16 kHz.
             if native_rate != _VOSK_RATE:
                 data, resample_state = audioop.ratecv(
                     data, 2, 1, native_rate, _VOSK_RATE, resample_state
                 )
+            # El offset DC del micrófono se saca ACÁ y no en la calibración
+            # sola: piso y decisión tienen que medirse sobre la MISMA señal
+            # o el umbral queda 19% alto. Ver vad.quitar_dc().
+            data = quitar_dc(data)
+
+            if detector.observar(data, time.time()):
+                break
+
             for rec in recognizers.values():
                 rec.AcceptWaveform(data)
     except Exception as e:
         print(f"[AUDIO] Error durante escucha: {e}")
+
+    # La sala se re-mide con lo que acabamos de oír: así el umbral de la
+    # PRÓXIMA escucha ya conoce el ruido de ahora, no el de hace una hora.
+    registrar_ruido(detector.muestras)
+    if not detector.hubo_voz:
+        print(f"[AUDIO] Nadie habló: nada pasó el VAD ({detector}).")
 
     textos = {}
     for clave, rec in recognizers.items():

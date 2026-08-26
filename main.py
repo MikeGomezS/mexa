@@ -35,6 +35,7 @@ import time
 
 from modulos.modulo_ia          import warmup_llm
 from modulos.modulo_tts         import presintetizar
+from modulos.modulo_audio       import calibrar_ruido_ambiente
 from modulos.modulo_sensores    import iniciar_sensores, detectar_persona
 from modulos.modulo_motores     import iniciar_motores, detener
 from modulos.modulo_camara      import iniciar_camara, apagar_camara
@@ -98,6 +99,13 @@ def iniciar_todo():
     # LLM para que la primera respuesta de IA no pague el costo de carga del modelo.
     _presintetizar_todo()
     warmup_llm()
+
+    # ÚLTIMO paso a propósito: mide el ruido de la sala con todo ya
+    # encendido (ventilador del proyector, cara animada) y con MEXA
+    # callada. Ese ruido es el que va a haber durante toda la visita,
+    # así que es el que el umbral de voz tiene que descontar. Calibrar
+    # antes de encender el proyector daría un piso optimista.
+    calibrar_ruido_ambiente()
 
     print("[MAIN] Todos los módulos iniciados. MEXA listo.")
 

@@ -5,6 +5,11 @@
 
 vosk>=0.3.45
 pyaudio>=0.2.13
+# onnxruntime y numpy los arrastra piper-tts, pero desde que el VAD
+# neuronal (Silero) corre sobre ONNX son dependencia DIRECTA: si un día
+# se cambia el TTS, esto no se puede ir con él.
+onnxruntime>=1.16.0
+numpy>=1.24.0
 piper-tts>=1.4.0
 langdetect>=1.0.9
 ollama>=0.1.8
