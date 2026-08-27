@@ -184,19 +184,46 @@ def _mostrar(etiqueta: str, textos: dict[str, str], esperado: str = _FRASE) -> t
     return ok, fantasma
 
 
-def _ronda(video: str, idiomas: list[str], aviso: str) -> tuple[dict, dict]:
+def _cuenta_regresiva(intento: int, total: int, frase: str | None) -> None:
+    """Avisa CUÁNDO hablar, con tiempo de reaccionar.
+
+    La primera versión imprimía "¡AHORA!" de golpe y pasaba directo a
+    escuchar. No alcanza: para cuando la persona lee el aviso, el video ya
+    está sonando fuerte y la ventana de escucha ya arrancó. Con la señal
+    perdida se pierde la medición entera, y encima parece un fallo del
+    cancelador cuando en realidad es un fallo del banco de pruebas.
+    """
+    if frase is None:
+        print(f"\n  intento {intento}/{total} — CALLADO, no hables.", flush=True)
+        return
+    print(f"\n  intento {intento}/{total} — preparate para decir: "
+          f"\"{frase}\"", flush=True)
+    for n in (3, 2, 1):
+        print(f"        {n}...", flush=True)
+        time.sleep(0.7)
+    print(f"\n  >>>>>>>>  ¡AHORA!  DECÍ: \"{frase}\"  <<<<<<<<\n", flush=True)
+
+
+def _ronda(video: str, idiomas: list[str], intento: int, total: int,
+           frase: str | None) -> tuple[dict, dict]:
     """Una medición con MEXA sonando: (lo que oyó por el AEC, por el crudo).
 
     Los dos caminos ven la MISMA voz en el MISMO instante, que es lo único
     que hace comparable esta prueba: la voz humana no es reproducible.
+
+    ORDEN IMPORTANTE: la cuenta regresiva va ANTES de arrancar el grabador
+    del micrófono crudo. Si arrancara antes, el crudo grabaría esos ~2 s
+    de video que el camino del AEC no ve, y esas palabras de más contarían
+    como fantasmas suyos. Sería inclinar la comparación a favor del
+    cancelador con un detalle de implementación.
     """
     reproductor = _reproducir(video)
     if not _esperar_eco(int(audio.vad.piso_actual())):
         reproductor.terminate(); reproductor.wait()
         return {}, {}
+    _cuenta_regresiva(intento, total, frase)
     grabador = _GrabadorCrudo()
     grabador.start()
-    print(aviso)
     con_aec = audio.escuchar_multilingue(_TIMEOUT, idiomas)
     crudo_pcm = grabador.detener()
     reproductor.terminate(); reproductor.wait()
@@ -228,9 +255,9 @@ def main() -> int:
     # ---------- CONTROL: sin eco, ¿te entiende? ----------
     # Sin esta vara, un fracaso en el barge-in no se puede atribuir: podría
     # ser el eco, o podría ser que estés lejos o hablando bajo.
-    print(f"\nCONTROL — MEXA CALLADA. Decí \"{_FRASE}\" cuando aparezca ¡AHORA!")
+    print(f"\nCONTROL — MEXA CALLADA. Vas a decir \"{_FRASE}\".")
     input("  Enter para empezar... ")
-    print("  ¡AHORA!")
+    _cuenta_regresiva(1, 1, _FRASE)
     control = audio.escuchar_multilingue(_TIMEOUT, idiomas)
     desperto_control, _ = _mostrar("con cancelador", control)
     if not desperto_control:
@@ -246,8 +273,7 @@ def main() -> int:
 
     falsos_aec = falsos_crudo = 0
     for intento in range(1, _INTENTOS + 1):
-        con_aec, sin_aec = _ronda(video, idiomas,
-                                  f"\n  intento {intento}/{_INTENTOS} — callado")
+        con_aec, sin_aec = _ronda(video, idiomas, intento, _INTENTOS, None)
         if not con_aec:
             print("\n  MEDICIÓN INVÁLIDA: el parlante no llegó al micrófono.")
             return 6
@@ -262,8 +288,7 @@ def main() -> int:
     aciertos_aec = aciertos_crudo = 0
     fantasma_aec = fantasma_crudo = 0
     for intento in range(1, _INTENTOS + 1):
-        con_aec, sin_aec = _ronda(video, idiomas,
-                                  f"\n  intento {intento}/{_INTENTOS} — ¡AHORA!")
+        con_aec, sin_aec = _ronda(video, idiomas, intento, _INTENTOS, _FRASE)
         if not con_aec:
             print("\n  MEDICIÓN INVÁLIDA: el parlante no llegó al micrófono.")
             return 6
@@ -284,8 +309,7 @@ def main() -> int:
     pal_aec = pal_crudo = esperadas_tot = 0
     ruido_aec = ruido_crudo = 0
     for intento in range(1, _INTENTOS + 1):
-        con_aec, sin_aec = _ronda(video, idiomas,
-                                  f"\n  intento {intento}/{_INTENTOS} — ¡AHORA!")
+        con_aec, sin_aec = _ronda(video, idiomas, intento, _INTENTOS, _PREGUNTA)
         if not con_aec:
             print("\n  MEDICIÓN INVÁLIDA: el parlante no llegó al micrófono.")
             return 6
