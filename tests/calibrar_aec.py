@@ -18,6 +18,12 @@ POR QUÉ ESTE SCRIPT EXISTE: que el AEC cargue NO significa que sirva.
 QUÉ SE MIDE Y EN QUÉ ORDEN. Cada paso existe porque sin él el siguiente
 mentiría:
 
+Cada medición captura TRES canales a la vez: el micrófono crudo, la
+salida del cancelador, y la REFERENCIA (lo que sale por el parlante,
+leído del monitor del sink). El tercero es el que evita adivinar: "MEXA
+no sonó" y "MEXA sonó y el filtro se comió la voz" dan las dos salida
+cero, y sin la referencia no hay forma de distinguirlas.
+
   PASO 0 — PISO DE LA SALA, en silencio. Es la vara. Sin conocerlo no se
     puede saber si en la PRUEBA A hubo eco de verdad o el parlante estaba
     mudo. Esa distinción hundió la primera corrida de este script: midió
@@ -141,6 +147,16 @@ _MARGEN_ECO_SOBRE_PISO = 2.0
 # y mismo umbral que tests/calibrar_umbral_voz.py: p80/p20 del ruido.
 _SPREAD_MAX = 3.0
 
+# En la PRUEBA C suena el MISMO video, por el MISMO parlante y al MISMO
+# volumen que en la A. Si el micrófono oye bastante menos que en la A, el
+# parlante no estaba reproduciendo igual y las dos pruebas no son
+# comparables. 0.8 deja margen para la variación del propio video.
+_ECO_REPETIBLE = 0.8
+
+# Nivel de referencia por debajo del cual se considera que NO está
+# saliendo audio por el parlante. El monitor en silencio mide 0 exacto.
+_REF_MINIMA = 200
+
 
 class Medicion(NamedTuple):
     """Lo que sale de una captura simultánea crudo/cancelado."""
@@ -149,6 +165,7 @@ class Medicion(NamedTuple):
     pico_crudo: int
     pico_aec: int
     p20_crudo: int
+    ref: int
 
     @property
     def db(self) -> float:
@@ -276,8 +293,13 @@ def _verificar_cableado() -> bool:
     return sano
 
 
-def _capturar_dupla(segundos: float) -> tuple[bytes, bytes]:
-    """Captura de los DOS nodos a la vez y devuelve (crudo, cancelado).
+def _capturar_trio(segundos: float) -> tuple[bytes, bytes, bytes]:
+    """Captura de los TRES nodos a la vez: (crudo, cancelado, referencia).
+
+    La REFERENCIA es lo que sale por el parlante, leído del monitor del
+    sink. Sin ella no se puede distinguir "MEXA no sonó" de "MEXA sonó y
+    el filtro se comió la voz": las dos cosas dan salida cero y sin este
+    tercer canal el veredicto sería una adivinanza.
 
     Simultáneo a propósito: comparar dos grabaciones tomadas en momentos
     distintos no mediría el AEC, mediría la diferencia entre dos instantes
@@ -292,13 +314,22 @@ def _capturar_dupla(segundos: float) -> tuple[bytes, bytes]:
     descarte = int(_CONVERGENCIA_S * _RATE * _ANCHO)
     resultados: dict[str, bytes] = {}
     procesos: dict[str, subprocess.Popen] = {}
+    comun = ["--rate", str(_RATE), "--channels", "1", "--format", "s16",
+             "--raw", "-"]
 
     for clave, nodo in (("crudo", _NODO_CRUDO), ("aec", _NODO_AEC)):
         procesos[clave] = subprocess.Popen(
-            ["pw-record", "--target", nodo, "--rate", str(_RATE),
-             "--channels", "1", "--format", "s16", "--raw", "-"],
+            ["pw-record", "--target", nodo] + comun,
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
         )
+    # El monitor de un sink se captura con stream.capture.sink: sin esa
+    # propiedad, --target sobre un sink no engancha el monitor y devuelve
+    # silencio — que se confundiría con "el parlante está mudo".
+    procesos["ref"] = subprocess.Popen(
+        ["pw-record", "-P", "stream.capture.sink=true",
+         "--target", _sink_por_defecto()] + comun,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )
 
     def _leer(clave: str) -> None:
         salida = procesos[clave].stdout
@@ -314,7 +345,8 @@ def _capturar_dupla(segundos: float) -> tuple[bytes, bytes]:
         p.terminate()
         p.wait()
 
-    return resultados.get("crudo", b""), resultados.get("aec", b"")
+    return (resultados.get("crudo", b""), resultados.get("aec", b""),
+            resultados.get("ref", b""))
 
 
 def _esperar_eco(piso: int, limite_s: float = 12.0) -> float | None:
@@ -379,18 +411,20 @@ def _nivel(muestras: list[int]) -> int:
 
 def _medir(titulo: str, segundos: float = _MEDICION_S) -> Medicion | None:
     """Corre una medición simultánea y la reporta. None si no entró audio."""
-    crudo_raw, aec_raw = _capturar_dupla(segundos)
+    crudo_raw, aec_raw, ref_raw = _capturar_trio(segundos)
     if not crudo_raw or not aec_raw:
         print("  ERROR: no entró audio de alguno de los dos nodos.")
         return None
 
     crudo, aec = _rms_por_chunk(crudo_raw), _rms_por_chunk(aec_raw)
+    ref = _rms_por_chunk(ref_raw)
     m = Medicion(_nivel(crudo), _nivel(aec), max(crudo), max(aec),
-                 _percentil(sorted(crudo), 0.20))
+                 _percentil(sorted(crudo), 0.20), _nivel(ref))
 
     print(f"  {titulo}")
-    print(f"    micrófono crudo   p80 {m.crudo:>6} RMS   pico {m.pico_crudo:>6}")
-    print(f"    con cancelador    p80 {m.aec:>6} RMS   pico {m.pico_aec:>6}")
+    print(f"    sale por el parlante  p80 {m.ref:>6} RMS")
+    print(f"    micrófono crudo       p80 {m.crudo:>6} RMS   pico {m.pico_crudo:>6}")
+    print(f"    con cancelador        p80 {m.aec:>6} RMS   pico {m.pico_aec:>6}")
     if m.muda:
         print("    → SILENCIO DIGITAL a la salida del cancelador.")
     else:
@@ -461,6 +495,12 @@ def main() -> int:
             print("\n  El cancelador entrega silencio digital CON LA SALA")
             print("  QUIETA. No cancela nada: está roto. Revisá el cableado.")
             return 5
+        if piso.ref >= _REF_MINIMA:
+            print(f"\n  !! ALGO ESTÁ SONANDO por el parlante ({piso.ref} RMS de")
+            print("     referencia) mientras mido el piso. La vara queda alta")
+            print("     y arrastra el error a todas las pruebas siguientes.")
+            if input("     ¿Repito? [S/n] ").strip().lower() in ("", "s", "si", "sí"):
+                continue
         if piso.spread <= _SPREAD_MAX:
             break
         print(f"\n  !! MEDICIÓN CONTAMINADA: p80/p20 = {piso.spread:.1f}x "
@@ -493,6 +533,16 @@ def main() -> int:
 
     # GUARDA: sin eco no hay nada que cancelar, y el número que salga de
     # acá no describe al cancelador sino a una sala callada.
+    # La referencia distingue las dos causas de un eco flojo: si no sale
+    # audio del parlante el problema es la reproducción; si sale y el
+    # micrófono no lo oye, el problema es acústico (volumen o distancia).
+    if eco.ref < _REF_MINIMA:
+        print(f"\n  MEDICIÓN INVÁLIDA: por el parlante no salió audio "
+              f"({eco.ref} RMS).")
+        print("  No es el micrófono ni el cancelador: MEXA no sonó. Revisá")
+        print("  que el parlante siga conectado como salida por defecto.")
+        return 6
+
     minimo = int(piso.crudo * _MARGEN_ECO_SOBRE_PISO)
     eco_propio = _energia_propia(eco.crudo, piso.crudo)
     if eco_propio < minimo:
@@ -548,6 +598,29 @@ def main() -> int:
     reproductor.wait()
     if doble is None:
         return 1
+
+    # DOS GUARDAS, porque la PRUEBA C es la que decide y una medición
+    # inválida acá se convierte en un veredicto sobre el barge-in.
+    if doble.ref < _REF_MINIMA:
+        print(f"\n  MEDICIÓN INVÁLIDA: por el parlante no salió audio "
+              f"({doble.ref} RMS).")
+        print("  Sin MEXA sonando esto no es doble conversación: es la")
+        print("  PRUEBA B otra vez. Repetí.")
+        return 6
+
+    # El micrófono tiene que oír AL MENOS lo que oyó en la PRUEBA A: mismo
+    # video, mismo parlante, mismo volumen, y encima la voz sumada. Si oye
+    # menos, las dos fuentes no estaban sonando juntas y comparar A con C
+    # no significa nada. Dos fuentes suman en potencia: nunca pueden dar
+    # menos que la más fuerte de las dos.
+    minimo_doble = int(eco.crudo * _ECO_REPETIBLE)
+    if doble.crudo < minimo_doble:
+        print(f"\n  MEDICIÓN INVÁLIDA: el micrófono oyó {doble.crudo} RMS con")
+        print(f"  las dos fuentes juntas, menos que los {eco.crudo} RMS que oyó")
+        print("  con el parlante SOLO. Eso es imposible si las dos sonaban:")
+        print("  la suma de dos fuentes nunca da menos que la más fuerte.")
+        print("  El parlante bajó, se alejó o se cortó a mitad de la prueba.")
+        return 6
 
     # Cuánto de la voz sobrevive cuando MEXA suena encima. Se compara
     # contra la voz SOLA a la salida del cancelador, no contra el crudo:
