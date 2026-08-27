@@ -38,6 +38,23 @@ de falso positivo, y no necesita voz humana: sólo hay que callarse.
 TRES INTENTOS, NO UNO. Un reconocedor es estocástico: una sola corrida no
 distingue "funciona" de "tuvo suerte".
 
+EL WAKE WORD NO ALCANZA COMO MÉTRICA, y esto se aprendió midiendo. En la
+primera corrida real el veredicto por wake word dio "el cancelador no
+aporta": crudo 3/3 contra AEC 2/3. Pero mirando QUÉ devolvió cada uno:
+
+    con cancelador   "comencemos"                    1 palabra,  0 fantasma
+    micrófono crudo  "hoy vamos a de comprar el      9 palabras, 8 fantasma
+                      imperio comencemos hola"
+
+Los dos "despiertan", porque buscar UNA palabra clave entre ruido es la
+tarea más fácil que hay para un reconocedor: basta con que una zafe. Pero
+después de despertar, MEXA TRANSCRIBE PREGUNTAS para el LLM, y esa
+segunda frase como pregunta es basura. La métrica del wake word satura y
+favorece al micrófono sucio.
+
+Por eso se mide también una PREGUNTA, y no sólo si aparece, sino cuántas
+palabras aparecen QUE NADIE DIJO. Esa es la tarea real.
+
 REQUISITOS: el AEC cableado (correr antes tests/calibrar_aec.py) y el
 parlante encendido al volumen de exposición.
 
@@ -61,9 +78,13 @@ from vosk import KaldiRecognizer
 
 from modulos import modulo_audio as audio
 from modulos.captura import RATE, abrir, NODO_CRUDO
-from modulos.dialogo import _PALABRAS_ACTIVACION, _dijo
+from modulos.dialogo import _PALABRAS_ACTIVACION, _dijo, _normalizar
 
 _FRASE    = "comencemos"
+# Una pregunta plausible de visitante: es lo que MEXA tiene que entender
+# DESPUÉS de despertar, y es la tarea donde una transcripción sucia deja
+# de servir. Corta, para que se pueda decir de un tirón sobre el video.
+_PREGUNTA = "qué comían los aztecas"
 _INTENTOS = 3
 _TIMEOUT  = 6.0
 
@@ -133,16 +154,53 @@ def _decodificar(pcm: bytes, idiomas: list[str]) -> dict[str, str]:
     return textos
 
 
+def _exactitud(texto: str, esperado: str) -> tuple[int, int, int]:
+    """(palabras acertadas, esperadas, fantasma) de una transcripción.
+
+    FANTASMA es la medida que importa y la que el wake word no ve: cuántas
+    palabras devolvió el reconocedor que nadie pronunció. Para despertar
+    alcanza con que UNA palabra zafe entre ruido; para que el LLM entienda
+    una pregunta, las que sobran la arruinan.
+    """
+    esperadas = _normalizar(esperado).split()
+    dichas    = _normalizar(texto).split()
+    aciertos  = sum(1 for e in esperadas if e in dichas)
+    fantasma  = sum(1 for d in dichas if d not in esperadas)
+    return aciertos, len(esperadas), fantasma
+
+
 def _desperto(textos: dict[str, str]) -> bool:
     """La decisión REAL de MEXA, no una aproximación."""
     return any(_dijo(t, _PALABRAS_ACTIVACION) for t in textos.values())
 
 
-def _mostrar(etiqueta: str, textos: dict[str, str]) -> bool:
+def _mostrar(etiqueta: str, textos: dict[str, str], esperado: str = _FRASE) -> tuple[bool, int]:
+    """Imprime lo oído y devuelve (despertó, palabras fantasma)."""
     ok = _desperto(textos)
+    fantasma = sum(_exactitud(t, esperado)[2] for t in textos.values())
     oido = " | ".join(f"{i}: {t or '(nada)'}" for i, t in textos.items())
-    print(f"    {etiqueta:<22} {'DESPIERTA' if ok else 'no despierta':<13} {oido}")
-    return ok
+    print(f"    {etiqueta:<22} {'DESPIERTA' if ok else 'no despierta':<13} "
+          f"[{fantasma:2d} fantasma] {oido}")
+    return ok, fantasma
+
+
+def _ronda(video: str, idiomas: list[str], aviso: str) -> tuple[dict, dict]:
+    """Una medición con MEXA sonando: (lo que oyó por el AEC, por el crudo).
+
+    Los dos caminos ven la MISMA voz en el MISMO instante, que es lo único
+    que hace comparable esta prueba: la voz humana no es reproducible.
+    """
+    reproductor = _reproducir(video)
+    if not _esperar_eco(int(audio.vad.piso_actual())):
+        reproductor.terminate(); reproductor.wait()
+        return {}, {}
+    grabador = _GrabadorCrudo()
+    grabador.start()
+    print(aviso)
+    con_aec = audio.escuchar_multilingue(_TIMEOUT, idiomas)
+    crudo_pcm = grabador.detener()
+    reproductor.terminate(); reproductor.wait()
+    return con_aec, _decodificar(crudo_pcm, idiomas)
 
 
 def _buscar_video() -> str | None:
@@ -174,7 +232,8 @@ def main() -> int:
     input("  Enter para empezar... ")
     print("  ¡AHORA!")
     control = audio.escuchar_multilingue(_TIMEOUT, idiomas)
-    if not _mostrar("con cancelador", control):
+    desperto_control, _ = _mostrar("con cancelador", control)
+    if not desperto_control:
         print(f"\n  MEDICIÓN INVÁLIDA: MEXA no te entiende NI CON SILENCIO.")
         print("  El problema no es el eco. Acercate, hablá más fuerte o")
         print("  revisá el umbral con tests/calibrar_umbral_voz.py.")
@@ -187,44 +246,62 @@ def main() -> int:
 
     falsos_aec = falsos_crudo = 0
     for intento in range(1, _INTENTOS + 1):
-        reproductor = _reproducir(video)
-        if not _esperar_eco(int(audio.vad.piso_actual())):
-            reproductor.terminate(); reproductor.wait()
+        con_aec, sin_aec = _ronda(video, idiomas,
+                                  f"\n  intento {intento}/{_INTENTOS} — callado")
+        if not con_aec:
             print("\n  MEDICIÓN INVÁLIDA: el parlante no llegó al micrófono.")
             return 6
-        grabador = _GrabadorCrudo()
-        grabador.start()
-        print(f"\n  intento {intento}/{_INTENTOS} — callado")
-        sola_aec = audio.escuchar_multilingue(_TIMEOUT, idiomas)
-        crudo_pcm = grabador.detener()
-        reproductor.terminate(); reproductor.wait()
-        falsos_aec   += _mostrar("con cancelador", sola_aec)
-        falsos_crudo += _mostrar("micrófono crudo",
-                                 _decodificar(crudo_pcm, idiomas))
+        falsos_aec   += _mostrar("con cancelador", con_aec)[0]
+        falsos_crudo += _mostrar("micrófono crudo", sin_aec)[0]
 
-    # ---------- BARGE-IN: los dos a la vez, tres veces ----------
+    # ---------- BARGE-IN: ¿te oye por encima de sí misma? ----------
     print(f"\nBARGE-IN — MEXA va a sonar y vos vas a decir \"{_FRASE}\" encima.")
     print(f"  {_INTENTOS} intentos. Esperá el ¡AHORA! de cada uno.")
     input("  Enter para empezar... ")
 
     aciertos_aec = aciertos_crudo = 0
+    fantasma_aec = fantasma_crudo = 0
     for intento in range(1, _INTENTOS + 1):
-        reproductor = _reproducir(video)
-        if not _esperar_eco(int(audio.vad.piso_actual())):
-            reproductor.terminate(); reproductor.wait()
+        con_aec, sin_aec = _ronda(video, idiomas,
+                                  f"\n  intento {intento}/{_INTENTOS} — ¡AHORA!")
+        if not con_aec:
             print("\n  MEDICIÓN INVÁLIDA: el parlante no llegó al micrófono.")
             return 6
+        ok_a, f_a = _mostrar("con cancelador", con_aec)
+        ok_c, f_c = _mostrar("micrófono crudo", sin_aec)
+        aciertos_aec += ok_a; fantasma_aec += f_a
+        aciertos_crudo += ok_c; fantasma_crudo += f_c
 
-        grabador = _GrabadorCrudo()
-        grabador.start()
-        print(f"\n  intento {intento}/{_INTENTOS} — ¡AHORA!")
-        con_aec = audio.escuchar_multilingue(_TIMEOUT, idiomas)
-        crudo_pcm = grabador.detener()
-        reproductor.terminate(); reproductor.wait()
+    # ---------- PREGUNTA: la tarea que de verdad importa ----------
+    # Despertar es keyword spotting: basta con que UNA palabra zafe entre
+    # ruido. Después de despertar MEXA transcribe preguntas para el LLM, y
+    # ahí las palabras que sobran arruinan la frase. Esta es la medida que
+    # el wake word no puede dar.
+    print(f"\nPREGUNTA — MEXA suena y vos preguntás: \"{_PREGUNTA}\"")
+    print(f"  {_INTENTOS} intentos. Decila completa y de un tirón.")
+    input("  Enter para empezar... ")
 
-        sin_aec = _decodificar(crudo_pcm, idiomas)
-        aciertos_aec   += _mostrar("con cancelador", con_aec)
-        aciertos_crudo += _mostrar("micrófono crudo", sin_aec)
+    pal_aec = pal_crudo = esperadas_tot = 0
+    ruido_aec = ruido_crudo = 0
+    for intento in range(1, _INTENTOS + 1):
+        con_aec, sin_aec = _ronda(video, idiomas,
+                                  f"\n  intento {intento}/{_INTENTOS} — ¡AHORA!")
+        if not con_aec:
+            print("\n  MEDICIÓN INVÁLIDA: el parlante no llegó al micrófono.")
+            return 6
+        for etiqueta, textos in (("con cancelador", con_aec),
+                                 ("micrófono crudo", sin_aec)):
+            # Sólo el modelo español: la pregunta se dice en español y el
+            # modelo inglés sobre audio español sólo aporta alucinaciones.
+            aciertos, esperadas, fantasma = _exactitud(textos.get("es", ""),
+                                                       _PREGUNTA)
+            print(f"    {etiqueta:<22} {aciertos}/{esperadas} palabras  "
+                  f"[{fantasma:2d} fantasma]  \"{textos.get('es', '') or '(nada)'}\"")
+            if etiqueta == "con cancelador":
+                pal_aec += aciertos; ruido_aec += fantasma
+                esperadas_tot += esperadas
+            else:
+                pal_crudo += aciertos; ruido_crudo += fantasma
 
     # ---------- VEREDICTO ----------
     print("\n--- VEREDICTO ---")
@@ -232,14 +309,16 @@ def main() -> int:
           f"   sin cancelador {aciertos_crudo}/{_INTENTOS}")
     print(f"  MEXA se despertó SOLA          con cancelador {falsos_aec}/{_INTENTOS}"
           f"   sin cancelador {falsos_crudo}/{_INTENTOS}")
+    print(f"  PREGUNTA, palabras acertadas   con cancelador {pal_aec}/{esperadas_tot}"
+          f"   sin cancelador {pal_crudo}/{esperadas_tot}")
+    print(f"  PREGUNTA, palabras FANTASMA    con cancelador {ruido_aec}"
+          f"   sin cancelador {ruido_crudo}")
 
     mayoria = _INTENTOS // 2 + 1
 
-    # El falso positivo se juzga PRIMERO: una MEXA que se interrumpe sola
-    # a mitad del video es peor que una que no puede ser interrumpida.
-    # Escuchar mientras habla sólo tiene sentido si no se confunde consigo
-    # misma, y este error no lo ve el visitante como "no me escuchó" sino
-    # como "se volvió loca".
+    # El falso positivo se juzga PRIMERO: una MEXA que se interrumpe sola a
+    # mitad del video es peor que una que no puede ser interrumpida. El
+    # visitante no lo lee como "no me escuchó" sino como "se volvió loca".
     if falsos_aec > 0:
         print("\n  NO SIRVE — MEXA SE DESPIERTA SOLA: oye su propio audio y")
         print("  lo toma por un visitante. Dejarla escuchando mientras habla")
@@ -251,13 +330,23 @@ def main() -> int:
         print("  siquiera con el cancelador. El barge-in no es viable por")
         print("  esta vía — la voz sobrevive en energía pero no en contenido.")
         return 7
-    if aciertos_crudo >= mayoria:
+
+    if pal_aec < pal_crudo:
         print("\n  SIRVE, PERO EL CANCELADOR NO ES LO QUE LO LOGRA: el")
-        print("  micrófono crudo entiende casi igual. El eco no molestaba")
-        print("  tanto como se creía. Revisar si vale la pena el AEC.")
+        print("  micrófono crudo transcribe la pregunta MEJOR. El eco no")
+        print("  molestaba tanto como se creía; revisar si vale la pena.")
         return 0
-    print("\n  SIRVE, Y ES EL CANCELADOR: con él MEXA entiende al visitante")
-    print("  que le habla encima; sin él, no. El barge-in es viable.")
+
+    if ruido_crudo > ruido_aec * 2:
+        print("\n  SIRVE, Y ES EL CANCELADOR. Los dos caminos pueden")
+        print(f"  despertarla —para eso basta UNA palabra— pero el crudo mete")
+        print(f"  {ruido_crudo} palabras que nadie dijo contra {ruido_aec} del")
+        print("  cancelador. Esa diferencia no se ve al despertar y arruina")
+        print("  la pregunta que viene después: el LLM recibiría basura.")
+        return 0
+
+    print("\n  SIRVE: MEXA entiende al visitante que le habla encima, y no")
+    print("  se confunde consigo misma. El barge-in es viable.")
     return 0
 
 
