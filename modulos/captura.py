@@ -32,6 +32,16 @@ import subprocess
 NODO_AEC   = "mexa_aec_source"
 NODO_CRUDO = "alsa_input.usb-Clip-on_USB_microphone_iTalk-02-00.mono-fallback"
 
+# Puertos del grafo. Que el nodo del AEC EXISTA no significa que esté
+# escuchando el micrófono correcto: el módulo echo-cancel se carga junto
+# con el daemon de PipeWire, ANTES de que los dispositivos estén
+# publicados, y si el micrófono todavía no existe WirePlumber lo engancha
+# al dispositivo por defecto de ese instante. Visto en hardware el
+# 2026-08-27: quedó enganchado a un micrófono Bluetooth y el nodo
+# entregaba CEROS. Sin error, sin log: sordera total.
+PUERTO_MIC         = f"{NODO_CRUDO}:capture_MONO"
+PUERTO_AEC_ENTRADA = "mexa_aec_capture:input_MONO"
+
 # 16 kHz mono s16: exactamente lo que necesitan Vosk y Silero. Se le pide
 # a PipeWire directamente en vez de remuestrear después con audioop —
 # PipeWire resamplea mejor, y de paso desaparece un paso del camino.
@@ -54,20 +64,74 @@ def nodo_existe(nombre: str) -> bool:
     return f'node.name = "{nombre}"' in salida
 
 
-def elegir_nodo(existe=None) -> str:
-    """El micrófono sin eco si está; el crudo si no.
+def links_entrantes() -> dict[str, list[str]]:
+    """Mapa puerto_destino -> puertos de origen, leído de `pw-link -l`."""
+    try:
+        salida = subprocess.run(["pw-link", "-l"], capture_output=True,
+                                text=True, timeout=10).stdout
+    except Exception:
+        return {}
+    mapa: dict[str, list[str]] = {}
+    destino = ""
+    for linea in salida.splitlines():
+        if linea[:1] and not linea[:1].isspace():
+            destino = linea.strip()
+        elif "|<-" in linea:
+            mapa.setdefault(destino, []).append(linea.split("|<-", 1)[1].strip())
+    return mapa
 
-    Degrada a propósito en vez de fallar: que el cancelador no esté
-    cargado significa que MEXA no puede ser interrumpida, no que tenga
-    que quedarse sorda. Se avisa por consola, igual que hace vad.py
-    cuando le falta el modelo de Silero.
+
+def entrada_del_aec() -> list[str]:
+    """De qué puertos está leyendo el cancelador ahora mismo."""
+    return links_entrantes().get(PUERTO_AEC_ENTRADA, [])
+
+
+def reparar_cableado() -> bool:
+    """Desengancha lo que sobra y enchufa el micrófono al cancelador.
+
+    Un enlace hecho a mano se SOSTIENE: WirePlumber no vuelve a moverlo.
+    Sólo hay que ganar la carrera del arranque una vez.
     """
-    existe = existe or nodo_existe
-    if existe(NODO_AEC):
+    for malo in entrada_del_aec():
+        subprocess.run(["pw-link", "-d", malo, PUERTO_AEC_ENTRADA],
+                       capture_output=True, timeout=10)
+    hecho = subprocess.run(["pw-link", PUERTO_MIC, PUERTO_AEC_ENTRADA],
+                           capture_output=True, timeout=10)
+    return hecho.returncode == 0
+
+
+def elegir_nodo(existe=None, entrada=None, reparar=None) -> str:
+    """El micrófono sin eco si está Y ESTÁ BIEN CABLEADO; el crudo si no.
+
+    Degrada a propósito en vez de fallar. Las dos degradaciones avisan por
+    consola, igual que hace vad.py cuando le falta el modelo de Silero:
+    que MEXA no pueda ser interrumpida es un problema, que se quede sorda
+    es OTRO, y hay que poder distinguirlos leyendo el arranque.
+    """
+    existe  = existe  or nodo_existe
+    entrada = entrada or entrada_del_aec
+    reparar = reparar or reparar_cableado
+
+    if not existe(NODO_AEC):
+        print(f"[AUDIO] El cancelador de eco no está cargado ({NODO_AEC} no "
+              f"existe): escucho el micrófono crudo. MEXA no va a poder ser "
+              f"interrumpida mientras habla.")
+        return NODO_CRUDO
+
+    if entrada() == [PUERTO_MIC]:
         return NODO_AEC
-    print(f"[AUDIO] El cancelador de eco no está cargado ({NODO_AEC} no "
-          f"existe): escucho el micrófono crudo. MEXA no va a poder ser "
-          f"interrumpida mientras habla.")
+
+    # No se puede confiar en un cancelador enganchado a otro micrófono:
+    # entrega ceros, y leer ceros es peor que no tener cancelador.
+    print(f"[AUDIO] El cancelador está escuchando {entrada() or 'NADA'} en vez "
+          f"del micrófono de MEXA. Reconectando...")
+    if reparar() and entrada() == [PUERTO_MIC]:
+        print("[AUDIO] Cableado del cancelador corregido.")
+        return NODO_AEC
+
+    print("[AUDIO] NO se pudo corregir: escucho el micrófono crudo. Sin "
+          "cancelador, pero oyendo — leer el nodo mal cableado sería "
+          "quedarse sorda sin enterarse.")
     return NODO_CRUDO
 
 

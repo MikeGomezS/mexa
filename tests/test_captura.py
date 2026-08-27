@@ -34,7 +34,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from modulos.captura import ANCHO, CapturaPipeWire, elegir_nodo, NODO_AEC, NODO_CRUDO
+from modulos.captura import (ANCHO, CapturaPipeWire, elegir_nodo, NODO_AEC,
+                             NODO_CRUDO, PUERTO_MIC)
 
 # Productor de mentira: escribe una CUENTA CRECIENTE como int16, en
 # bloques chicos y con pausas. Los bloques chicos fuerzan el read parcial
@@ -156,13 +157,51 @@ def caso_is_active() -> tuple[bool, str]:
 
 def caso_eleccion_de_nodo() -> tuple[bool, str]:
     """Prefiere el micrófono SIN eco; degrada al crudo si el AEC no está."""
-    con_aec = elegir_nodo(existe=lambda n: True)
+    con_aec = elegir_nodo(existe=lambda n: True,
+                          entrada=lambda: [PUERTO_MIC])
     if con_aec != NODO_AEC:
-        return False, f"con AEC disponible eligió {con_aec}"
+        return False, f"con AEC disponible y bien cableado eligió {con_aec}"
     sin_aec = elegir_nodo(existe=lambda n: n != NODO_AEC)
     if sin_aec != NODO_CRUDO:
         return False, f"sin AEC eligió {sin_aec} en vez del micrófono crudo"
     return True, "AEC si está, crudo si no (MEXA no se queda muda)"
+
+
+def caso_aec_mal_cableado_se_repara() -> tuple[bool, str]:
+    """Si el AEC quedó enganchado a otro micrófono, se reconecta y se usa.
+
+    Es la carrera de arranque: el módulo carga junto con el daemon, antes
+    de que los dispositivos estén publicados, y WirePlumber lo engancha al
+    dispositivo por defecto de ese instante.
+    """
+    estado = {"origen": ["bluez_input.AA:BB:CC:capture_MONO"]}
+
+    def reparar():
+        estado["origen"] = [PUERTO_MIC]
+        return True
+
+    nodo = elegir_nodo(existe=lambda n: True,
+                       entrada=lambda: estado["origen"],
+                       reparar=reparar)
+    if nodo != NODO_AEC:
+        return False, f"reparó el cableado pero igual eligió {nodo}"
+    return True, "detecta el enganche equivocado, reconecta y usa el AEC"
+
+
+def caso_aec_mal_cableado_sin_arreglo() -> tuple[bool, str]:
+    """Si no se puede reparar, se lee el micrófono CRUDO. Nunca silencio.
+
+    Este es el caso que justifica todo el chequeo: un AEC enganchado al
+    dispositivo equivocado no da error, entrega CEROS. MEXA quedaría
+    completamente sorda en plena exposición y nada lo avisaría.
+    """
+    nodo = elegir_nodo(existe=lambda n: True,
+                       entrada=lambda: ["bluez_input.AA:BB:CC:capture_MONO"],
+                       reparar=lambda: False)
+    if nodo != NODO_CRUDO:
+        return False, (f"con el AEC mal cableado y sin arreglo eligió {nodo}: "
+                       f"MEXA leería silencio digital")
+    return True, "cae al micrófono crudo en vez de quedarse sorda"
 
 
 _CASOS = [
@@ -172,6 +211,8 @@ _CASOS = [
     ("muerte del productor",       caso_productor_muerto),
     ("is_active",                  caso_is_active),
     ("elección de nodo",           caso_eleccion_de_nodo),
+    ("AEC mal cableado, reparado", caso_aec_mal_cableado_se_repara),
+    ("AEC mal cableado, sin arreglo", caso_aec_mal_cableado_sin_arreglo),
 ]
 
 
