@@ -261,6 +261,17 @@ class DetectorVoz(_DetectorBase):
         super().__init__()
         self.umbral = umbral_actual() if umbral is None else umbral
 
+    @property
+    def umbral_energia(self) -> int:
+        """El nivel por debajo del cual este detector no oye nada.
+
+        Se llama igual que en `DetectorVozNeural` a propósito, aunque no
+        signifiquen lo mismo: acá es TODA la decisión, allá es solo la
+        compuerta previa a Silero. Quien mide la sala necesita preguntar
+        "¿a qué nivel dejás de oír?" sin saber cuál de los dos corre.
+        """
+        return self.umbral
+
     def _hay_voz(self, pcm: bytes) -> bool:
         return self.muestras[-1] >= self.umbral
 
@@ -368,14 +379,21 @@ class DetectorVozNeural(_DetectorBase):
                 f"energía ≥ {self.umbral_energia})")
 
 
-def crear_detector():
+def crear_detector(piso: float | None = None):
     """Devuelve el mejor detector disponible.
 
     Silero si está instalado; energía si no. La degradación es a propósito
     y no silenciosa: MEXA tiene que seguir escuchando aunque falte el
     modelo, pero quien mire la consola tiene que enterarse de con qué oído
     está trabajando.
+
+    `piso` fuerza el ruido de sala del que sale el umbral, en vez del que
+    MEXA viene midiendo sola. Lo usa quien mide la sala a mano
+    (`tests/calibrar_umbral_voz.py`), que tiene un piso recién medido y
+    todavía no cargado. Sin esto, ese script tenía que decidir por su
+    cuenta QUÉ detector corre y CON QUÉ umbral — y esa duplicación fue
+    justo lo que lo hizo dictar veredicto contra el detector equivocado.
     """
     if vad_neural_disponible():
-        return DetectorVozNeural()
-    return DetectorVoz()
+        return DetectorVozNeural(piso=piso)
+    return DetectorVoz(None if piso is None else umbral_desde_piso(piso))

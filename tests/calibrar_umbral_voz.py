@@ -52,12 +52,30 @@ def _medir(segundos: float) -> list[int]:
     return muestras
 
 
+# Una medición de SILENCIO sana es plana: el p80 no se despega del p20.
+# Si se despega, en esos 4 segundos sonó algo que no era la sala — un
+# golpe, una puerta, alguien hablando, MEXA moviéndose. El piso sale del
+# p20 y sobrevive al transitorio, pero el resto de la medición ya no
+# describe la sala. Medido: sala limpia 1.4x, sala con un portazo 10x.
+_SPREAD_MAX = 3.0
+
+
+def _percentil(ordenadas: list[int], q: float) -> int:
+    return ordenadas[int(q * (len(ordenadas) - 1))]
+
+
 def _informe(nombre: str, muestras: list[int]) -> None:
     ordenadas = sorted(muestras)
-    p20 = ordenadas[int(0.20 * (len(ordenadas) - 1))]
-    p80 = ordenadas[int(0.80 * (len(ordenadas) - 1))]
-    print(f"  {nombre:<22} p20 {p20:>6}   mediana {ordenadas[len(ordenadas)//2]:>6}   "
-          f"p80 {p80:>6}   pico {max(ordenadas):>6}")
+    print(f"  {nombre:<22} p20 {_percentil(ordenadas, 0.20):>6}   "
+          f"mediana {ordenadas[len(ordenadas)//2]:>6}   "
+          f"p80 {_percentil(ordenadas, 0.80):>6}   pico {max(ordenadas):>6}")
+
+
+def _spread(muestras: list[int]) -> float:
+    """p80/p20 del ruido: cuánto se despega la medición de su propio piso."""
+    ordenadas = sorted(muestras)
+    p20 = _percentil(ordenadas, 0.20)
+    return _percentil(ordenadas, 0.80) / p20 if p20 else 0.0
 
 
 def main() -> int:
@@ -65,18 +83,38 @@ def main() -> int:
     print("  MEXA — Calibración del umbral de voz en la sala real")
     print("=" * 62)
 
-    input("\n1) SILENCIO. Que nadie hable. Enter para medir la sala...")
-    sala = _medir(_MEDICION_S)
-    _informe("ruido de sala", sala)
+    while True:
+        input("\n1) SILENCIO. Que nadie hable. Enter para medir la sala...")
+        sala = _medir(_MEDICION_S)
+        _informe("ruido de sala", sala)
+        spread = _spread(sala)
+        if spread <= _SPREAD_MAX:
+            break
+        print(f"\n  !! MEDICION CONTAMINADA: p80/p20 = {spread:.1f}x "
+              f"(sano: menos de {_SPREAD_MAX:.0f}x)")
+        print("     En esos 4 segundos sonó algo que no era el ruido de fondo.")
+        print("     El piso se salva porque sale del p20, pero no te fíes:")
+        print("     repetila con la sala realmente quieta.")
+        if input("     ¿Repetir? [S/n] ").strip().lower() in ("n", "no"):
+            print("     Sigo con la medición contaminada. Anotalo.")
+            break
 
-    piso   = vad.piso_desde_muestras(sala)
-    umbral = vad.umbral_desde_piso(piso)
-    print(f"\n  → piso {int(piso)} RMS × factor {vad._FACTOR_UMBRAL} = "
-          f"umbral de energía {umbral}")
-    if vad.vad_neural_disponible():
-        print(f"  → VAD en producción: {vad.DetectorVozNeural(piso=piso)}")
-    else:
-        print("  → Silero NO instalado: corre el VAD de energía.")
+    # El veredicto se mide contra el umbral del detector que REALMENTE
+    # corre en esta máquina, no contra el del VAD de energía. No es un
+    # detalle: `DetectorVoz` usa piso × 3.0 y `DetectorVozNeural` usa
+    # piso × 2.0 (más bajo a propósito: Silero ya rechaza los golpes, la
+    # energía solo tiene que rechazar al stand de al lado). Juzgar con el
+    # factor equivocado inventa un problema que no existe.
+    piso     = vad.piso_desde_muestras(sala)
+    detector = vad.crear_detector(piso=piso)
+    umbral   = detector.umbral_energia
+    print(f"\n  → piso de ruido {int(piso)} RMS")
+    print(f"  → VAD en producción: {detector}")
+    print(f"  → el veredicto se mide contra {umbral} RMS")
+    if not vad.vad_neural_disponible():
+        print("  → OJO: Silero NO está instalado acá. Con Silero el umbral"
+              " baja a piso × 2.0 y el veredicto sería más optimista:"
+              " esta medición es el PEOR caso, no el de la expo.")
 
     input("\n2) Pará donde va a estar el visitante y hablá NORMAL "
           "hasta que corte. Enter...")
@@ -90,8 +128,7 @@ def main() -> int:
     print("\n" + "-" * 62)
     problemas = []
     for nombre, muestras in (("normal", normal), ("baja", bajo)):
-        ordenadas = sorted(muestras)
-        p80 = ordenadas[int(0.80 * (len(ordenadas) - 1))]
+        p80 = _percentil(sorted(muestras), 0.80)
         margen = p80 / umbral if umbral else 0
         if margen >= 1.3:
             print(f"  OK       voz {nombre}: supera el umbral por {margen:.1f}×")
