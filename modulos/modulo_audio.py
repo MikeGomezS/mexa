@@ -1,8 +1,8 @@
 # ============================================================
 #  MEXA — Módulo 01: Captura de Audio (Speech-to-Text)
 #  Motor principal: Vosk (100% offline, bilingüe es/en)
-#  Librería: vosk, pyaudio
-#  Instalar: pip install vosk pyaudio
+#  Librería: vosk (la captura va por PipeWire, ver modulos/captura.py)
+#  Instalar: pip install vosk
 #  Modelos: modelo_vosk_es/ (vosk-model-small-es-0.42)
 #           modelo_vosk_en/ (vosk-model-small-en-us-0.15)
 #
@@ -21,10 +21,11 @@ import json
 import os
 import time
 
-import pyaudio
 from vosk import Model, KaldiRecognizer
 
 from . import vad
+from .captura import CapturaPipeWire, RATE as _RATE_CAPTURA
+from .captura import abrir as _abrir_captura, elegir_nodo
 from .vad import crear_detector, quitar_dc, registrar_ruido, umbral_actual
 
 _BASE_DIR = os.path.dirname(__file__)
@@ -54,11 +55,9 @@ _PALABRA_A_IDIOMA = {
     "ingles":  "en", "english": "en",
 }
 
-_modelos:     dict[str, Model]     = {}
-_audio:       pyaudio.PyAudio | None = None
-_dev_index:   int | None           = None
-_native_rate: int | None           = None
-_stream:      pyaudio.Stream | None = None
+_modelos: dict[str, Model]          = {}
+_nodo:    str | None                = None
+_stream:  CapturaPipeWire | None    = None
 
 
 def _cargar_modelo(idioma: str = "es") -> Model:
@@ -85,66 +84,41 @@ def modelo_disponible(idioma: str) -> bool:
     return idioma in _MODELOS_DIR and os.path.isdir(_MODELOS_DIR[idioma])
 
 
-def _cargar_audio():
-    global _audio
-    if _audio is None:
-        _audio = pyaudio.PyAudio()
-    return _audio
+def _obtener_dispositivo() -> tuple[str, int]:
+    """Devuelve (nodo de PipeWire, frecuencia), cacheado tras la primera vez.
+
+    La frecuencia es SIEMPRE 16 kHz porque se le pide así a PipeWire, que
+    resamplea mejor que audioop y de paso saca un paso del camino. Sigue
+    devolviéndose como par para no romper la costura que usan
+    tests/test_wake_word_vad.py y tests/calibrar_umbral_voz.py.
+    """
+    global _nodo
+    if _nodo is None:
+        _nodo = elegir_nodo()
+        print(f"[AUDIO] Micrófono: nodo '{_nodo}', {_RATE_CAPTURA} Hz")
+    return _nodo, _RATE_CAPTURA
 
 
-def _buscar_microfono_usb(pa: pyaudio.PyAudio) -> tuple[int, int]:
-    """Devuelve (device_index, native_rate) del primer micrófono USB disponible."""
-    for i in range(pa.get_device_count()):
-        info = pa.get_device_info_by_index(i)
-        if info["maxInputChannels"] > 0 and "USB" in info["name"]:
-            return i, int(info["defaultSampleRate"])
-    for i in range(pa.get_device_count()):
-        info = pa.get_device_info_by_index(i)
-        if info["maxInputChannels"] > 0:
-            return i, int(info["defaultSampleRate"])
-    raise RuntimeError("[AUDIO] No se encontró ningún micrófono.")
-
-
-def _obtener_dispositivo() -> tuple[int, int]:
-    """Devuelve el dispositivo cacheado; solo escanea la primera vez."""
-    global _dev_index, _native_rate
-    if _dev_index is None:
-        pa = _cargar_audio()
-        _dev_index, _native_rate = _buscar_microfono_usb(pa)
-        print(f"[AUDIO] Micrófono: índice {_dev_index}, {_native_rate} Hz")
-    return _dev_index, _native_rate
-
-
-def _obtener_stream() -> pyaudio.Stream:
-    """Devuelve el stream persistente; lo crea si no existe o si se cerró."""
+def _obtener_stream() -> CapturaPipeWire:
+    """Devuelve la captura persistente; la crea si no existe o si murió."""
     global _stream
-    dev_index, native_rate = _obtener_dispositivo()
-    pa = _cargar_audio()
+    nodo, _ = _obtener_dispositivo()
     if _stream is None or not _stream.is_active():
         if _stream is not None:
-            try:
-                _stream.close()
-            except Exception:
-                pass
-        _stream = pa.open(
-            format=pyaudio.paInt16,
-            channels=1,
-            rate=native_rate,
-            input=True,
-            input_device_index=dev_index,
-            frames_per_buffer=_CHUNK,
-        )
+            _stream.close()
+        _stream = _abrir_captura(nodo)
         print("[AUDIO] Stream abierto.")
     return _stream
 
 
-def _vaciar_buffer(stream: pyaudio.Stream) -> None:
-    """Descarta frames acumulados durante TTS o silencio previo."""
+def _vaciar_buffer(stream: CapturaPipeWire) -> None:
+    """Descarta el audio acumulado durante TTS o silencio previo.
+
+    Mismo propósito que con PyAudio, otra mecánica: lo que antes se
+    drenaba consultando get_read_available() ahora se lee sin bloquear
+    hasta secar el pipe. Ver modulos/captura.py."""
     try:
-        n = stream.get_read_available()
-        while n > 0:
-            stream.read(min(n, _CHUNK), exception_on_overflow=False)
-            n = stream.get_read_available()
+        stream.descartar_pendiente()
     except Exception:
         pass
 

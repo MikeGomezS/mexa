@@ -4,7 +4,12 @@
 # ============================================================
 
 vosk>=0.3.45
-pyaudio>=0.2.13
+# NO hay pyaudio: MEXA captura el micrófono con `pw-record`, para que la
+# entrada pase por PipeWire y el cancelador de eco pueda restarle su
+# propia voz (modulos/captura.py). Eso mueve la dependencia de pip a un
+# BINARIO DEL SISTEMA:
+#     sudo apt install pipewire-bin
+# Sin ese binario MEXA se queda sorda, y `pip install -r` no lo avisa.
 # onnxruntime y numpy los arrastra piper-tts, pero desde que el VAD
 # neuronal (Silero) corre sobre ONNX son dependencia DIRECTA: si un día
 # se cambia el TTS, esto no se puede ir con él.

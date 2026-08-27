@@ -12,8 +12,11 @@
 #
 #  ANTES DE CORRER:
 #  1. Instalar dependencias:
-#     pip install speechrecognition pyaudio pyttsx3 ollama picamera2 opencv-python pygame
-#     sudo apt install espeak vlc -y
+#     pip install -r requirements.txt
+#     sudo apt install espeak vlc pipewire-bin -y
+#     (pipewire-bin trae pw-record: MEXA captura el micrófono POR AHÍ
+#      para que el cancelador de eco pueda restarle su propia voz.
+#      Sin ese binario se queda sorda. Ver modulos/captura.py.)
 #
 #  2. Descargar el modelo de IA:
 #     curl -fsSL https://ollama.com/install.sh | sh

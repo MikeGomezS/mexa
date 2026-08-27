@@ -92,9 +92,11 @@ import time
 from typing import NamedTuple
 
 # Nodos de PipeWire. El crudo es el micrófono tal como entra; el AEC es el
-# mismo micrófono después de restarle lo que salió por el parlante.
-_NODO_CRUDO = "alsa_input.usb-Clip-on_USB_microphone_iTalk-02-00.mono-fallback"
-_NODO_AEC   = "mexa_aec_source"
+# mismo micrófono después de restarle lo que salió por el parlante. Se
+# importan de modulos/captura.py, que es de donde los lee MEXA de verdad:
+# si acá se midiera un nodo y MEXA escuchara otro, este banco de pruebas
+# estaría calibrando algo que nadie usa.
+from modulos.captura import NODO_AEC as _NODO_AEC, NODO_CRUDO as _NODO_CRUDO
 
 # Puertos que TIENEN que estar enchufados al cancelador. Esto no es
 # paranoia: el módulo se carga junto con el daemon de PipeWire, ANTES de
