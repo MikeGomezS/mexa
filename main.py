@@ -65,10 +65,7 @@ def _presintetizar_todo() -> None:
     # Frases dependientes del idioma y de cada civilización.
     for idioma in ("es", "en"):
         f = contenido.FRASES[idioma]
-        nombres_civ = (
-            contenido.NOMBRES_DISPONIBLES if idioma == "es"
-            else [contenido.NOMBRES_EN[n] for n in contenido.NOMBRES_DISPONIBLES]
-        )
+        nombres_civ = contenido.nombres_ofrecidos(idioma)
         oferta = ", ".join(nombres_civ)
         frases.append(f["saludo_civ"].format(oferta=oferta))
         frases.append(f["no_reconocio"].format(oferta=oferta))

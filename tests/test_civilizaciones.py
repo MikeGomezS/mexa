@@ -32,6 +32,7 @@ import importlib.util
 import json
 import os
 import random
+import re
 import struct
 import sys
 
@@ -101,21 +102,48 @@ def _oir_con_ambos(pcm: bytes, gramaticas: dict[str, str]) -> dict[str, str]:
 
 
 def probar_gramatica() -> list[str]:
-    """Cada palabra de la gramática debe vivir en el léxico de su modelo."""
+    r"""Cada palabra de la gramática debe vivir en el léxico de su modelo, Y
+    TIENE QUE LLEGAR ENTERA hasta Vosk.
+
+    SE VALIDA LA CADENA SERIALIZADA, no la lista de Python. Esa distinción es
+    todo el test: `teotihuacán` SIEMPRE estuvo en el léxico español (id 51859),
+    así que mirar la lista de Python daba verde. Lo que llegaba a Vosk era otra
+    cosa — `json.dumps` con su `ensure_ascii=True` por defecto la mandaba como
+    el literal `teotihuac\u00e1n`, Vosk NO desescapa, y la descartaba en
+    silencio. El test pasaba mientras producción perdía la palabra.
+
+    Por eso hay dos comprobaciones y no una:
+      1. la cadena serializada no puede traer escapes `\uXXXX` — Vosk los
+         toma al pie de la letra, no los decodifica;
+      2. cada palabra tiene que existir en el léxico del modelo.
+    """
     print("1) GRAMÁTICA vs LÉXICO")
     errores = []
+    serializadas = contenido.gramaticas_json()   # exactamente lo que usa dialogo.py
     for idioma, palabras in contenido.GRAMATICA_CIVILIZACIONES.items():
         if not modelo_disponible(idioma):
             print(f"   [{idioma}] sin modelo instalado, se omite")
             continue
+
+        # 1) ¿la palabra sobrevive al viaje hasta Vosk?
+        if "\\u" in serializadas[idioma]:
+            escapadas = re.findall(r"[\w\\]*\\u[0-9a-fA-F]{4}[\w\\]*",
+                                   serializadas[idioma])
+            errores.append(f"[{idioma}] escapadas al serializar (Vosk las "
+                           f"descarta): {', '.join(escapadas)}")
+            print(f"   FALLA [{idioma}] la gramática viaja con escapes \\uXXXX: "
+                  f"{', '.join(escapadas)} — Vosk las va a IGNORAR")
+
+        # 2) ¿la palabra existe en el léxico del modelo?
         modelo = _cargar_modelo(idioma)
         muertas = [p for p in palabras if p != "[unk]"
                    and any(modelo.vosk_model_find_word(w) == -1 for w in p.split())]
         if muertas:
             errores.append(f"[{idioma}] fuera del léxico: {', '.join(muertas)}")
             print(f"   FALLA [{idioma}] fuera del léxico: {', '.join(muertas)}")
-        else:
-            print(f"   OK    [{idioma}] {len(palabras) - 1} palabras, todas en el léxico")
+        elif f"[{idioma}] escapadas" not in " ".join(errores):
+            print(f"   OK    [{idioma}] {len(palabras) - 1} palabras, en el "
+                  f"léxico y sin escapar")
     return errores
 
 
@@ -123,8 +151,7 @@ def probar_reconocimiento() -> tuple[dict, list[str]]:
     """Mide acierto / mudo / cruzado sobre todas las civilizaciones."""
     print("\n2) RECONOCIMIENTO (dos modelos + gramática cerrada)")
     sintetizar = _sintetizador()
-    gramaticas = {i: json.dumps(g)
-                  for i, g in contenido.GRAMATICA_CIVILIZACIONES.items()}
+    gramaticas = contenido.gramaticas_json()  # la misma que usa dialogo.py
 
     conteo = {"OK": 0, "MUDO": 0, "CRUZADO": 0}
     cruzados = []

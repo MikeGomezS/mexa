@@ -8,6 +8,7 @@
 # ============================================================
 
 from .modulo_proyector import CARPETA_VIDEOS
+import json
 import os
 import re
 
@@ -72,6 +73,29 @@ NOMBRES_EN = {
     "los Mixtecas":   "the Mixtecs",
 }
 
+# Lo que NO se ofrece en inglés, y por qué. Medido en test_civilizaciones.py
+# (4 condiciones de ruido): en inglés dan 0/4, ni una sola vez.
+#   'olmec' y 'toltec' NO EXISTEN en el léxico en-us de Vosk, así que el oído
+#   inglés no puede escribirlas ni queriendo. El rescate por oído español
+#   (dialogo.py) alcanza para Mixtecas — 2/4 — pero para éstas no llega nunca.
+# Ofrecerlas es prometer algo que MEXA no puede cumplir, y con gramática
+# cerrada el precio no es quedarse callada: es proyectar el video equivocado.
+# En ESPAÑOL las siete andan 4/4 y se siguen ofreciendo todas.
+_NO_OFRECIBLES_EN = {"los Olmecas", "los Toltecas"}
+
+
+def nombres_ofrecidos(idioma: str) -> list[str]:
+    """Los nombres que MEXA NOMBRA EN VOZ ALTA, en el idioma de la charla.
+
+    Una sola función porque antes esta lista se armaba por duplicado en
+    `main.py` y en `dialogo.py`, y dos copias de una regla es una regla que
+    tarde o temprano se contradice a sí misma.
+    """
+    if idioma != "en":
+        return list(NOMBRES_DISPONIBLES)
+    return [NOMBRES_EN[n] for n in NOMBRES_DISPONIBLES
+            if n not in _NO_OFRECIBLES_EN]
+
 # ── Gramática cerrada para la pregunta de civilización ───────
 # MEXA acaba de hacer una pregunta CERRADA ("¿sobre cuál civilización?"),
 # así que el decodificador no tiene por qué elegir entre 64 mil palabras:
@@ -93,6 +117,26 @@ GRAMATICA_CIVILIZACIONES: dict[str, list[str]] = {
            "zapotecas", "mixteca", "[unk]"],
     "en": ["mayas", "aztec", "aztecs", "teotihuacan", "zapotec", "tula", "[unk]"],
 }
+
+
+def gramaticas_json() -> dict[str, str]:
+    """La gramática ya serializada, tal como la recibe Vosk: {idioma: json}.
+
+    ensure_ascii=False NO ES COSMÉTICO, ES EL PUNTO DE ESTA FUNCIÓN. Con el
+    `ensure_ascii=True` que trae `json.dumps` por defecto, "teotihuacán" viaja
+    como el literal `teotihuac\u00e1n` — y VOSK NO DESESCAPA: busca esa cadena
+    tal cual, no la encuentra y DESCARTA la palabra en silencio (avisa con
+    "Ignoring word missing in vocabulary"). El oído español perdía Teotihuacán
+    entero, y los aciertos que se veían los salvaba el modelo inglés, que la
+    escribe sin tilde y por eso nunca sufrió el escapado.
+
+    Existe como función UNA para que producción y test no puedan divergir: el
+    defecto vivió meses porque `dialogo.py` y `test_civilizaciones.py`
+    serializaban cada uno por su cuenta, y el test validaba la lista de Python
+    (donde la tilde está bien) en vez de la cadena que se manda de verdad.
+    """
+    return {i: json.dumps(g, ensure_ascii=False)
+            for i, g in GRAMATICA_CIVILIZACIONES.items()}
 
 
 FRASES = {
@@ -122,6 +166,18 @@ _PATRONES = {clave: re.compile(rf"\b{re.escape(clave)}\b")
              for clave in CIVILIZACIONES}
 
 
+_UNK = "[unk]"
+
+
+def _podia_nombrar(idioma_modelo: str, nombre: str) -> bool:
+    """¿La gramática de ese modelo tenía alguna palabra para esa civilización?
+
+    Es lo que separa un "[unk]" que desmiente de uno que sólo se calla.
+    """
+    return any(clave in GRAMATICA_CIVILIZACIONES.get(idioma_modelo, ())
+               for clave, (_es, _en, n) in CIVILIZACIONES.items() if n == nombre)
+
+
 def detectar_civilizacion_multi(textos: dict[str, str],
                                 idioma: str) -> tuple[str, str] | None:
     """Decide la civilización a partir de lo que oyó CADA modelo por separado.
@@ -141,21 +197,50 @@ def detectar_civilizacion_multi(textos: dict[str, str],
     entre una lista, un modelo contesta cualquier cosa antes que callarse; que
     el otro modelo lo desmienta convierte ese invento en una repregunta —
     barata— en vez de en el video equivocado, que es caro.
+
+    "[unk]" NO SIEMPRE ES SILENCIO, y esa distinción es la que evita proyectar
+    cualquier cosa. Si un modelo dijo "[unk]" TENIENDO la palabra en su
+    gramática, no se abstuvo: DESMINTIÓ. Si ni siquiera la tenía, no podía
+    nombrarla ni queriendo y su "[unk]" no dice nada.
+
+    Caso real que motivó la regla (medido en tests/test_civilizaciones.py): un
+    visitante pide 'the olmecs', que en inglés NO se puede pedir; el oído
+    español contesta "teotihuacán" y el inglés "[unk]". El inglés TIENE
+    'teotihuacan' en su gramática, así que ese "[unk]" es un NO en la cara —
+    y sin esta regla MEXA proyectaba Teotihuacán.
+
+    SÓLO VETA EL OÍDO DEL IDIOMA QUE SE ESTÁ HABLANDO. El otro modelo está
+    escuchando una lengua que no es la suya: que diga "[unk]" es lo NORMAL, no
+    una opinión. Medido: sin esta restricción los aciertos se derrumban de 42
+    a 30 sobre 56 — un visitante decía "los mayas" en español, el oído inglés
+    se abstenía (como corresponde) y MEXA descartaba una elección perfecta.
+
+    Lo que la regla NO rompe: el rescate por oído español. Cuando el español
+    reconoce 'mixteca' y el inglés dice "[unk]", el inglés no tenía 'mixtec'
+    en su gramática — no podía nombrarla. Ese "[unk]" sigue siendo silencio y
+    la elección se acepta.
     """
     encontrados = {}
+    abstenidos = []
     for idioma_modelo, texto in textos.items():
         if not texto:
             continue
         hallazgo = detectar_civilizacion(texto, idioma)
         if hallazgo:
             encontrados[idioma_modelo] = hallazgo
+        elif _UNK in texto:
+            abstenidos.append(idioma_modelo)
 
     if not encontrados:
         return None
     nombres = {nombre for _ruta, nombre in encontrados.values()}
     if len(nombres) > 1:
         return None          # se contradicen: mejor repreguntar
-    return next(iter(encontrados.values()))
+
+    elegido = next(iter(encontrados.values()))
+    if idioma in abstenidos and _podia_nombrar(idioma, elegido[1]):
+        return None          # el oído nativo dijo "[unk]" pudiendo nombrarla: es un NO
+    return elegido
 
 
 def detectar_civilizacion(texto: str, idioma: str) -> tuple[str, str] | None:
