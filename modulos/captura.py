@@ -24,13 +24,71 @@
 # ============================================================
 
 import os
+import re
 import subprocess
 
-# El micrófono SIN eco que publica el módulo echo-cancel, y el micrófono
-# crudo por si el cancelador no está cargado. Estos nombres son la única
-# fuente de verdad: tests/calibrar_aec.py los importa de acá.
-NODO_AEC   = "mexa_aec_source"
-NODO_CRUDO = "alsa_input.usb-Clip-on_USB_microphone_iTalk-02-00.mono-fallback"
+# El micrófono SIN eco que publica el módulo echo-cancel.
+NODO_AEC = "mexa_aec_source"
+
+
+def _listar_nodos() -> str:
+    """La lista de nodos de PipeWire, cruda. Cuesta ~11 ms (medido)."""
+    try:
+        return subprocess.run(["pw-cli", "ls", "Node"], capture_output=True,
+                              text=True, timeout=10).stdout
+    except Exception:
+        return ""
+
+
+# ── El micrófono crudo se BUSCA, no se nombra ────────────────
+#
+# Acá había un nombre escrito a mano. El 2026-09-08 se cambió el clip-on
+# por un lavalier inalámbrico y ese nombre dejó de existir: MEXA quedó
+# apuntando a un nodo fantasma.
+#
+# Y lo grave no fue quedarse sin nodo, fue que NADIE SE ENTERÓ:
+# `pw-record --target <nodo-que-no-existe>` NO FALLA. Cae al micrófono por
+# defecto y sigue entregando audio como si nada. Medido ese día: 156614
+# bytes de audio REAL leídos de un nodo inexistente, que resultaron ser el
+# micrófono del parlante Bluetooth. O sea que la degradación "caigo al
+# micrófono CRUDO avisando" de elegir_nodo() estaba parada sobre un nombre
+# que nadie verificaba: creía caer al micrófono y caía a cualquier cosa.
+#
+# Por eso ahora el micrófono se busca en el grafo. El patrón deja afuera a
+# propósito los micrófonos Bluetooth (`bluez_input.*`), que son justo los
+# que se colaron las dos veces que esto se rompió en silencio.
+#
+# SOBRE LOS NOMBRES QUE CAMBIAN AL CAMBIAR DE PUERTO USB: un dispositivo
+# con número de serie se llama por su serie y sobrevive al cambio de
+# puerto — verificado el 2026-09-08 moviendo el receptor de puerto, el
+# nombre no cambió. Uno SIN número de serie lleva la ruta USB adentro del
+# nombre y sí cambia. Buscar por patrón cubre los dos casos; escribir el
+# nombre a mano no cubre ninguno.
+_PATRON_MIC = re.compile(r'node\.name = "(alsa_input\.usb-[^"]*)"')
+
+
+def microfono_usb(listar=None) -> str | None:
+    """El micrófono USB publicado en el grafo, o None si no hay ninguno.
+
+    Devuelve None en vez de un nombre inventado A PROPÓSITO. Un nombre que
+    no existe no es un valor seguro: pw-record se lo come sin chistar y
+    escucha otra cosa. Si no hay micrófono hay que decirlo, no adivinarlo.
+    """
+    hallados = sorted(set(_PATRON_MIC.findall((listar or _listar_nodos)())))
+    if not hallados:
+        return None
+    if len(hallados) > 1:
+        print(f"[AUDIO] Hay {len(hallados)} micrófonos USB: {hallados}. "
+              f"Uso {hallados[0]}.")
+    return hallados[0]
+
+
+# Se resuelve una vez al importar (cuesta ~11 ms) y queda como constante
+# del módulo porque es la costura que importan tests/test_captura.py,
+# tests/calibrar_aec.py y tests/probar_barge_in.py. Si se cambia el
+# micrófono con MEXA ya corriendo hay que reimportar; en la práctica el
+# micrófono se enchufa antes de arrancar.
+NODO_CRUDO = microfono_usb()
 
 # Puertos del grafo. Que el nodo del AEC EXISTA no significa que esté
 # escuchando el micrófono correcto: el módulo echo-cancel se carga junto
@@ -39,7 +97,7 @@ NODO_CRUDO = "alsa_input.usb-Clip-on_USB_microphone_iTalk-02-00.mono-fallback"
 # al dispositivo por defecto de ese instante. Visto en hardware el
 # 2026-08-27: quedó enganchado a un micrófono Bluetooth y el nodo
 # entregaba CEROS. Sin error, sin log: sordera total.
-PUERTO_MIC         = f"{NODO_CRUDO}:capture_MONO"
+PUERTO_MIC         = f"{NODO_CRUDO}:capture_MONO" if NODO_CRUDO else None
 PUERTO_AEC_ENTRADA = "mexa_aec_capture:input_MONO"
 
 # 16 kHz mono s16: exactamente lo que necesitan Vosk y Silero. Se le pide
@@ -56,12 +114,7 @@ _DESCARTE_MAX = 4 * 1024 * 1024
 
 def nodo_existe(nombre: str) -> bool:
     """True si PipeWire tiene ese nodo cargado ahora mismo."""
-    try:
-        salida = subprocess.run(["pw-cli", "ls", "Node"], capture_output=True,
-                                text=True, timeout=10).stdout
-    except Exception:
-        return False
-    return f'node.name = "{nombre}"' in salida
+    return f'node.name = "{nombre}"' in _listar_nodos()
 
 
 def links_entrantes() -> dict[str, list[str]]:
@@ -111,6 +164,19 @@ def elegir_nodo(existe=None, entrada=None, reparar=None) -> str:
     existe  = existe  or nodo_existe
     entrada = entrada or entrada_del_aec
     reparar = reparar or reparar_cableado
+
+    # SIN MICRÓFONO NO SE DEGRADA: SE FRENA. Las degradaciones de abajo
+    # eligen entre dos micrófonos que existen. "No hay ninguno" no es una
+    # degradación, es una ausencia, y devolver cualquier nombre acá haría
+    # que pw-record caiga al dispositivo por defecto y MEXA escuche otra
+    # cosa creyendo que escucha bien — que es exactamente el modo de falla
+    # que este módulo existe para evitar. Mejor no arrancar que arrancar
+    # sorda sin saberlo.
+    if NODO_CRUDO is None:
+        raise RuntimeError(
+            "[AUDIO] No hay ningún micrófono USB publicado en PipeWire. "
+            "Revisá que el receptor esté enchufado (`arecord -l`) y que "
+            "PipeWire lo vea (`pw-cli ls Node`). MEXA no arranca sorda.")
 
     if not existe(NODO_AEC):
         print(f"[AUDIO] El cancelador de eco no está cargado ({NODO_AEC} no "
