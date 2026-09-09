@@ -40,6 +40,22 @@ def establecer_idioma(idioma: str):
 def _sistema() -> str:
     return _SISTEMA_BASE + "\n" + _INSTRUCCION_IDIOMA[_idioma]
 
+# Largo MÍNIMO del primer trozo, en caracteres. Se busca la coma A PARTIR de
+# acá, así que una coma más temprana se ignora y MEXA no arranca diciendo un
+# fragmento suelto de tres palabras. Más chico = habla antes pero suena picado;
+# más grande = suena mejor pero el visitante mira a un robot callado.
+# 25 sale de la medida: a 6.8 tokens/s en la Pi, ~8 tokens ≈ 1.2 s.
+_MIN_PRIMER_TROZO = 25
+
+# TOPE DURO del primer trozo. Sin esto no hay garantía ninguna: medido, el
+# modelo puede escribir la primera coma recién en el carácter 94, y el visitante
+# se come 17 segundos de silencio. Pasado este largo se corta en el último
+# espacio, aunque quede a mitad de cláusula. A 6.8 tokens/s son ~2.4 s.
+# Es un compromiso EXPLÍCITO: la costura se nota un poco, el silencio se nota
+# muchísimo. Si suena mal, subilo; si MEXA tarda en arrancar, bajalo.
+_MAX_PRIMER_TROZO = 60
+
+_RE_CLAUSULA   = re.compile(r"[,;:]\s")   # corte de cláusula para el primer trozo
 _RE_PARENTESIS = re.compile(r"\(.*?\)")  # elimina (no, espera... ¡México!)
 _RE_ESPACIOS   = re.compile(r" {2,}")
 
@@ -54,6 +70,26 @@ _OPCIONES_OLLAMA = {
     "top_p":       0.9,
 }
 
+def _mensajes(contexto: str, pregunta: str) -> list:
+    """Arma el prompt: sistema + historial + la pregunta actual CON sus hechos.
+
+    EL CONTEXTO SÓLO VA EN EL TURNO ACTUAL, y esto no es cosmética. Antes el
+    historial guardaba `f"{contexto}\n\nPregunta: {pregunta}"` completo, así
+    que los ~400 caracteres de hechos de CADA pregunta vieja viajaban otra vez
+    en cada turno — hasta 1200 caracteres de material ya consumido.
+
+    Y eso se paga caro: procesar el prompt en esta Pi cuesta entre 5 y 25
+    segundos, MEDIDO, y es lo primero que espera el visitante, antes de que se
+    genere un solo token. El historial existe para que MEXA entienda "¿y quién
+    la construyó?", no para volver a suministrarle datos que ya usó.
+    """
+    mensajes = [{"role": "system", "content": _sistema()}] + _historial[-6:]
+    if contexto:
+        mensajes[-1] = {"role": "user",
+                        "content": f"{contexto}\n\nPregunta: {pregunta}"}
+    return mensajes
+
+
 def generar_respuesta(pregunta: str) -> str:
     """
     Recibe una pregunta de texto y regresa la respuesta de la IA.
@@ -64,15 +100,15 @@ def generar_respuesta(pregunta: str) -> str:
         return _MENSAJES_ERROR[_idioma][0]
 
     contexto = buscar_contexto(pregunta)
-    contenido = f"{contexto}\n\nPregunta: {pregunta}" if contexto else pregunta
-    _historial.append({"role": "user", "content": contenido})
+    _historial.append({"role": "user", "content": pregunta})
+    mensajes = _mensajes(contexto, pregunta)
     print(f"[IA] Procesando: {pregunta}")
     if contexto:
         print("[IA] Contexto verificado inyectado.")
     try:
         respuesta = ollama.chat(
             model="llama3.2:1b",  # modelo liviano para Raspberry Pi 5
-            messages=[{"role": "system", "content": _sistema()}] + _historial[-6:],
+            messages=mensajes,
             options=_OPCIONES_OLLAMA,
             keep_alive=-1,
         )
@@ -98,14 +134,14 @@ def generar_respuesta_stream(pregunta: str):
         return
 
     contexto = buscar_contexto(pregunta)
-    contenido = f"{contexto}\n\nPregunta: {pregunta}" if contexto else pregunta
-    _historial.append({"role": "user", "content": contenido})
+    _historial.append({"role": "user", "content": pregunta})
+    mensajes = _mensajes(contexto, pregunta)
     print(f"[IA] Procesando (stream): {pregunta}")
 
     try:
         stream = ollama.chat(
             model="llama3.2:1b",
-            messages=[{"role": "system", "content": _sistema()}] + _historial[-6:],
+            messages=mensajes,
             options=_OPCIONES_OLLAMA,
             keep_alive=-1,
             stream=True,
@@ -113,6 +149,7 @@ def generar_respuesta_stream(pregunta: str):
 
         buffer = ""
         texto_completo = ""
+        primero = True
 
         for chunk in stream:
             token = chunk["message"]["content"]
@@ -122,15 +159,41 @@ def generar_respuesta_stream(pregunta: str):
             # Yield cada oración completa en cuanto llega
             while True:
                 match = re.search(r'[.!?]+\s', buffer)
-                if not match:
+                # EL PRIMER TROZO SE CORTA ANTES, en la primera coma útil.
+                # El visitante no espera la respuesta: espera la PRIMERA PALABRA.
+                # A 6.8 tokens/s (medido en la Pi), aguardar una oración entera
+                # son ~12 s de silencio mirando a un robot mudo; cortar en la
+                # primera coma útil lo baja a ~1.2 s.
+                # El resto sigue saliendo por oración completa: para entonces MEXA
+                # ya está hablando y Piper sintetiza 7x más rápido que el habla,
+                # así que la cola nunca se queda corta.
+                # ESTO SÓLO ES ACEPTABLE PORQUE hablar_stream ya no corta el audio
+                # entre trozos (un solo pw-play). Con el corte viejo, partir en la
+                # coma habría AGREGADO un silencio en mitad de la frase.
+                corte = match.end() if match else None
+                if primero and corte is None:
+                    # .search(buffer, pos) — con patrón COMPILADO, porque
+                    # re.search(pat, txt, 25) toma el 25 como FLAGS, no como
+                    # posición, y buscaría desde el principio.
+                    clausula = _RE_CLAUSULA.search(buffer, _MIN_PRIMER_TROZO)
+                    if clausula:
+                        corte = clausula.end()
+                    elif len(buffer) >= _MAX_PRIMER_TROZO:
+                        # Sin coma a la vista: cortar en el último espacio para
+                        # no partir una palabra por la mitad.
+                        espacio = buffer.rfind(" ", _MIN_PRIMER_TROZO,
+                                               _MAX_PRIMER_TROZO)
+                        corte = espacio + 1 if espacio > 0 else _MAX_PRIMER_TROZO
+                if corte is None:
                     break
-                oracion = buffer[:match.end()].strip()
+                primero = False
+                oracion = buffer[:corte].strip()
                 oracion = _RE_PARENTESIS.sub("", oracion)
                 oracion = _RE_ESPACIOS.sub(" ", oracion).strip()
                 if oracion:
                     print(f"[IA] Oración lista: {oracion[:60]}...")
                     yield oracion
-                buffer = buffer[match.end():]
+                buffer = buffer[corte:]
 
         # Resto sin puntuación final
         if buffer.strip():
