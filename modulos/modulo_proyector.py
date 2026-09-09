@@ -26,8 +26,10 @@
 
 import cv2
 import os
+import select
 import subprocess
 import sys
+import time
 
 import pygame
 
@@ -69,9 +71,20 @@ _CARA_SCRIPT = os.path.join(os.path.dirname(__file__), "_cara_animada.py")
 _cara_proc: subprocess.Popen | None = None
 
 
+# Cuánto se espera a que la cara avise que ya pintó, antes de rendirse.
+_ESPERA_CARA_S = 4.0
+
+
 def iniciar_proyector():
-    """Inicializa pygame como ventana sin borde posicionada sobre el proyector (HDMI-A-1)."""
+    """Abre la ventana del proceso principal sobre el proyector.
+
+    Va en FULLSCREEN, no sólo NOFRAME: el panel del escritorio (wf-panel-pi
+    bajo labwc) es una capa por encima de las ventanas normales y quedaba
+    dibujado sobre la imagen. Medido: fullscreen lo tapa, sin borde no.
+    """
     global pantalla
+    if pantalla is not None:
+        return
     if not os.environ.get("DISPLAY"):
         os.environ["DISPLAY"] = ":0"
     # Posicionar la ventana en las coordenadas exactas del proyector en el
@@ -79,10 +92,52 @@ def iniciar_proyector():
     # SDL_VIDEO_WINDOW_POS sí lo hace de forma confiable.
     os.environ["SDL_VIDEO_WINDOW_POS"] = f"{_PROYECTOR_X},{_PROYECTOR_Y}"
     pygame.init()
-    pantalla = pygame.display.set_mode((_PROYECTOR_W, _PROYECTOR_H), pygame.NOFRAME)
+    pantalla = pygame.display.set_mode((_PROYECTOR_W, _PROYECTOR_H),
+                                       pygame.NOFRAME | pygame.FULLSCREEN)
     pantalla.fill((0, 0, 0))
     pygame.display.flip()
-    print("[PROYECTOR] Iniciado en el monitor principal (HDMI-A-2, posición 0,0).")
+    print("[PROYECTOR] Iniciado en el monitor principal (posición 0,0).")
+
+
+def _cerrar_ventana() -> None:
+    """Cierra la ventana del proceso principal (la cara tiene la suya).
+
+    Mientras la cara está en pantalla esta ventana no dibuja NADA: es un fondo
+    negro tapado por el subproceso. Dejarla viva daba dos ventanas pygame
+    peleando por el mismo monitor, y dos entradas en la barra de tareas.
+    """
+    global pantalla
+    if pantalla is None:
+        return
+    pygame.display.quit()
+    pantalla = None
+
+
+def _esperar_cara_lista(proc: subprocess.Popen) -> bool:
+    """Espera la línea 'LISTO' que la cara manda tras pintar su primer cuadro.
+
+    POR QUÉ ESPERAR. La cara tarda ~0.7 s en aparecer. Sin este apretón de
+    manos hay que elegir entre dos cosas feas: cerrar la ventana de fondo antes
+    y mostrar el ESCRITORIO durante ese rato, o no cerrarla nunca y quedarse con
+    la ventana duplicada. Esperando, el traspaso no tiene ningún hueco.
+
+    Si la cara no avisa (arrancó mal, versión vieja), se devuelve False y la
+    ventana de fondo se queda: peor que perfecto, pero nunca peor que antes.
+    """
+    if proc.stdout is None:
+        return False
+    limite = time.time() + _ESPERA_CARA_S
+    while True:
+        restante = limite - time.time()
+        if restante <= 0 or not select.select([proc.stdout], [], [], restante)[0]:
+            break
+        linea = proc.stdout.readline()
+        if not linea:                 # el proceso se murió
+            break
+        if linea.strip() == b"LISTO":
+            return True
+    print("[PROYECTOR] La cara no avisó que arrancó; dejo la ventana de fondo.")
+    return False
 
 
 def _desactivar_cara() -> None:
@@ -109,8 +164,14 @@ def _iniciar_cara(expresion: str = "idle") -> None:
             expresion,
         ],
         stdin=subprocess.PIPE,
-        env={**os.environ, "DISPLAY": os.environ.get("DISPLAY", ":0")},
+        stdout=subprocess.PIPE,
+        env={**os.environ,
+             "DISPLAY": os.environ.get("DISPLAY", ":0"),
+             # Sin esto la primera línea del pipe sería el saludo de pygame.
+             "PYGAME_HIDE_SUPPORT_PROMPT": "1"},
     )
+    if _esperar_cara_lista(_cara_proc):
+        _cerrar_ventana()
     print(f"[PROYECTOR] Cara activada: {expresion}")
 
 
@@ -217,6 +278,10 @@ def reproducir_video(ruta_video: str, duracion_seg: float = 15.0):
     """
     global pantalla
     _desactivar_cara()
+    # La cara cierra esta ventana al tomar la pantalla, así que hay que
+    # reabrirla. Antes se daba por sentado que seguía viva y el video reventaba
+    # con AttributeError sobre None.
+    iniciar_proyector()
 
     if not os.path.exists(ruta_video):
         print(f"[PROYECTOR] Video no encontrado: {ruta_video}")
