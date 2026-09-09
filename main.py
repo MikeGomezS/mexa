@@ -41,7 +41,8 @@ from modulos.modulo_tts         import presintetizar
 from modulos.modulo_audio       import calibrar_ruido_ambiente
 from modulos.modulo_sensores    import iniciar_sensores, detectar_persona
 from modulos.modulo_motores     import iniciar_motores, detener
-from modulos.modulo_camara      import iniciar_camara, apagar_camara
+from modulos.modulo_camara      import (iniciar_camara, diagnosticar_enfoque,
+                                        apagar_camara)
 from modulos.modulo_proyector   import (iniciar_proyector, pantalla_bienvenida,
                                         apagar_proyector)
 from modulos.modulo_brazos      import iniciar_brazos, cerrar_brazos
@@ -99,6 +100,14 @@ def iniciar_todo():
     # LLM para que la primera respuesta de IA no pague el costo de carga del modelo.
     _presintetizar_todo()
     warmup_llm()
+
+    # DESPUÉS de la pre-síntesis a propósito: la cámara puede capturar 40 fps
+    # de imagen inútil si el lente está velado, y el autofocus necesita unos
+    # segundos para asentarse. Esos segundos ya los gastó el arranque acá
+    # arriba, así que el diagnóstico sale gratis y llega a tiempo — antes de
+    # que MEXA reciba al primer visitante y "no detecte caras" sin explicar
+    # por qué.
+    diagnosticar_enfoque()
 
     # ÚLTIMO paso a propósito: mide el ruido de la sala con todo ya
     # encendido (ventilador del proyector, cara animada) y con MEXA

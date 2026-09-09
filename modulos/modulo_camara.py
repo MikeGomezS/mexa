@@ -69,6 +69,101 @@ def iniciar_camara():
         print(f"[CAMARA] No se pudo iniciar la cámara ({e}). "
               "Continúo sin seguimiento de cara.")
 
+# ── Diagnóstico de enfoque ────────────────────────────────────
+# La cámara puede ENUMERAR y CAPTURAR perfecto y aun así estar CIEGA. Si el
+# lente está velado —película protectora de fábrica, mugre, un acrílico del
+# chasis delante— llega toda la luz (la exposición sale sana) pero NO llega la
+# estructura de esa luz. El autofocus barre el lente buscando un PICO de
+# contraste; sin nada que enfocar no hay pico. A veces se declara Failed, y a
+# veces —peor— se declara Focused sobre cualquier posición, porque en una curva
+# plana todo punto es un máximo. Por eso el veredicto NO puede apoyarse en
+# AfState: se apoya en la nitidez medida, y usa AfState sólo como contexto.
+#
+# Sin este chequeo el fallo es MUDO: iniciar_camara() dice "iniciada", los
+# frames llegan a 40 fps, y el único síntoma es "no detecta caras" — que manda
+# a buscar el bug al detector, que no tiene la culpa.
+#
+# Por qué NO vive dentro de iniciar_camara(): el AF tarda segundos en
+# asentarse y bloquear el arranque esperándolo sería tiempo tirado. El arranque
+# de MEXA ya gasta esos segundos en el proyector, los brazos y la pre-síntesis
+# de frases; llamándolo DESPUÉS, el AF ya convergió y la lectura cuesta un frame.
+_AF_FOCUSED = 2   # libcamera AfStateEnum.Focused
+_AF_FAILED  = 3   # libcamera AfStateEnum.Failed
+
+# Varianza del laplaciano por debajo de la cual el cuadro no tiene detalle
+# alguno. Medido en este equipo: con el lente velado da 2.5-3.2 en TODAS las
+# posiciones del lente; las capturas sanas de tests/diag_frames/ dan 16-173.
+# El hueco entre 5 y 15 no lo pisó ninguna muestra: el corte va ahí.
+_NITIDEZ_MINIMA = 5.0
+
+
+def _nitidez(frame) -> float | None:
+    """Cuánto detalle fino tiene el cuadro (varianza del laplaciano).
+
+    Es la MISMA métrica que usa el autofocus por dentro, pero calculada acá
+    para poder mostrarla: así el veredicto trae un número que el operador puede
+    contrastar contra tests/diag_frames/, en vez de pedirle fe en el AF."""
+    if frame is None:
+        return None
+    gris = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return float(cv2.Laplacian(gris, cv2.CV_64F).var())
+
+
+def diagnosticar_enfoque() -> bool:
+    """Informa si la cámara está VIENDO, no sólo capturando. True si enfocó.
+
+    NO aborta ni corrige nada: la decisión de seguir sin visión ya la tomó
+    iniciar_camara(). Esto sólo evita que MEXA quede ciega EN SILENCIO."""
+    if cam is None:
+        return False
+
+    try:
+        metadatos = cam.capture_metadata()
+    except Exception as e:
+        print(f"[CAMARA] No se pudo leer el estado del enfoque ({e}).")
+        return False
+
+    estado  = metadatos.get("AfState")
+    lente   = metadatos.get("LensPosition")
+    nitidez = _nitidez(capturar_frame())
+    medida  = "?" if nitidez is None else f"{nitidez:.1f}"
+
+    # La NITIDEZ manda; AfState sólo acompaña. Este orden no es cosmético: con
+    # el lente velado, el AF de este equipo llegó a reportar Focused sobre un
+    # cuadro de nitidez 2.9 —o sea, MINTIÓ—. Se entiende por qué: el AF busca un
+    # MÁXIMO RELATIVO de contraste, y en una curva plana cualquier punto es el
+    # máximo. Confiar en AfState primero dejaría pasar en silencio justo el
+    # fallo que este diagnóstico existe para atrapar.
+    #
+    # La nitidez, en cambio, es absoluta: mide si hay detalle, no si el AF cree
+    # haberlo encontrado. Por eso se evalúa ANTES que cualquier estado del AF.
+    if nitidez is not None and nitidez < _NITIDEZ_MINIMA:
+        print(f"[CAMARA] *** LENTE VELADO: no veo NADA (nitidez={medida}, "
+              f"sanas dan 16-173). Capto imagen pero MEXA está ciega.")
+        print("[CAMARA]     Revisá en este orden: (1) película protectora de "
+              "fábrica sobre el lente, (2) lente sucio, (3) acrílico del chasis "
+              "delante, (4) adónde apunta.")
+        print(f"[CAMARA]     (el autofocus dice AfState={estado} — no le creas: "
+              "sobre una curva plana de contraste cualquier punto le parece el "
+              "máximo.)")
+        return False
+
+    if estado == _AF_FOCUSED:
+        print(f"[CAMARA] Enfoque OK (nitidez={medida}).")
+        return True
+
+    if estado == _AF_FAILED:
+        posicion = "?" if lente is None else f"{lente:.2f}"
+        print(f"[CAMARA] ! El autofocus no enganchó (nitidez={medida}, "
+              f"lente={posicion}). Hay detalle, así que probablemente sea la "
+              f"escena (pared lisa) y no el lente. Sigo.")
+        return False
+
+    print(f"[CAMARA] Enfoque sin veredicto (AfState={estado}, "
+          f"nitidez={medida}). Sigo igual.")
+    return False
+
+
 def capturar_frame():
     """Captura un frame de la cámara. Devuelve None si no hay cámara o si la
     captura excede CAPTURA_TIMEOUT_S (p. ej. cable CSI flojo: evita que MEXA
