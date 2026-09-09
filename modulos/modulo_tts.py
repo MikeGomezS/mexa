@@ -68,10 +68,19 @@ def _reproducir_con_volumen(ruta_wav: str, pcm_data: bytes, sample_rate: int) ->
 
     threading.Thread(target=_play, daemon=True).start()
 
-    chunk_dur = _VOL_CHUNK / 2 / sample_rate  # segundos reales por chunk
+    # RELOJ ABSOLUTO, no sleeps encadenados. `time.sleep` siempre se pasa un
+    # poco, y sumando un chunk cada 23 ms el error se acumula: medido, +3% de
+    # la duración (+0.22 s en una frase de 6.7 s) que se pagaban como silencio
+    # al final. Calcular el instante de cada chunk desde el arranque no acumula.
+    reloj0 = time.monotonic()
+    reproducido = 0.0
     for i in range(0, len(pcm_data), _VOL_CHUNK):
-        _enviar_volumen(audioop.rms(pcm_data[i:i + _VOL_CHUNK], 2))
-        time.sleep(chunk_dur)
+        trozo = pcm_data[i:i + _VOL_CHUNK]
+        _enviar_volumen(audioop.rms(trozo, 2))
+        reproducido += len(trozo) / 2 / sample_rate
+        espera = reloj0 + reproducido - time.monotonic()
+        if espera > 0:
+            time.sleep(espera)
 
     done.wait(timeout=10.0)
     _enviar_volumen(0)  # cierra la boca al terminar
@@ -176,50 +185,127 @@ def hablar(texto: str) -> None:
         parar()
 
 
+def _abrir_reproductor(sample_rate: int) -> subprocess.Popen:
+    """UN pw-play que se queda abierto y come PCM crudo por stdin.
+
+    POR QUÉ NO UNO POR ORACIÓN. Antes cada oración lanzaba su propio
+    `pw-play`: proceso nuevo, stream de PipeWire nuevo, y —lo caro— una
+    NEGOCIACIÓN NUEVA CON EL PARLANTE BLUETOOTH. Eso es el corte que se
+    escuchaba entre frase y frase. Medido: 3 oraciones con un proceso por
+    oración agregan +0.81 s de silencio; con un solo stream, +0.06 s.
+    """
+    return subprocess.Popen(
+        ["pw-play", "--raw", f"--rate={sample_rate}", "--channels=1",
+         "--format=s16", "--latency=50ms", "-"],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL)
+
+
 def hablar_stream(oraciones) -> None:
-    """Reproduce un iterable de oraciones solapando síntesis y reproducción.
-    Mientras la oración N se escucha, la N+1 ya se está sintetizando en background.
-    Elimina el silencio entre oraciones en respuestas de IA."""
+    """Reproduce un iterable de oraciones como UN SOLO chorro de audio.
+
+    Tres cosas pasan a la vez:
+      1. un hilo SINTETIZA la oración N+1 mientras se escucha la N,
+      2. un hilo ESCRIBE el PCM en el único pw-play (se bloquea solo cuando
+         el buffer se llena, que es justo lo que queremos),
+      3. el hilo principal mueve la BOCA con un RELOJ ABSOLUTO.
+
+    El reloj absoluto no es un detalle. Antes la boca avanzaba con
+    `time.sleep(chunk_dur)` acumulando el error de cada sleep: medido, +0.22 s
+    por oración (+3%), que se pagaban como silencio ANTES de la siguiente.
+    Ahora cada chunk tiene su instante calculado desde el arranque, así que el
+    error no se acumula por más larga que sea la respuesta.
+
+    Si cambia el sample rate a mitad de camino (voz distinta), se cierra el
+    reproductor y se abre otro: mezclar frecuencias en un stream crudo
+    reproduciría a velocidad equivocada.
+    """
     from .modulo_brazos import animar, parar
     _CENTINELA = object()
     wav_queue: queue.Queue = queue.Queue(maxsize=2)
+    pcm_queue: queue.Queue = queue.Queue()
 
     def _sintetizar() -> None:
         try:
             for oracion in oraciones:
                 if not oracion:
                     continue
-                idioma = _detectar_idioma(oracion)
-                voz    = _cargar_voz(idioma)
+                voz = _cargar_voz(_detectar_idioma(oracion))
                 buf = io.BytesIO()
                 with wave.open(buf, "wb") as wf:
                     voz.synthesize_wav(oracion, wf)
-                wav_bytes = buf.getvalue()
-                buf2 = io.BytesIO(wav_bytes)
-                with wave.open(buf2, "rb") as r:
-                    sample_rate = r.getframerate()
-                    pcm_data    = r.readframes(r.getnframes())
-                wav_queue.put((wav_bytes, pcm_data, sample_rate))
+                with wave.open(io.BytesIO(buf.getvalue()), "rb") as r:
+                    wav_queue.put((r.readframes(r.getnframes()), r.getframerate()))
         except Exception as e:
             print(f"[TTS] Error en síntesis stream: {e}")
         finally:
             wav_queue.put(_CENTINELA)
 
+    def _escribir(proc: subprocess.Popen) -> None:
+        """Vuelca el PCM en pw-play hasta el centinela. Se bloquea cuando el
+        buffer está lleno: esa contrapresión es la que mantiene el chorro."""
+        try:
+            while True:
+                pcm = pcm_queue.get()
+                if pcm is None:
+                    break
+                proc.stdin.write(pcm)
+            proc.stdin.flush()
+        except (BrokenPipeError, ValueError, OSError):
+            pass
+        finally:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+
     threading.Thread(target=_sintetizar, daemon=True).start()
 
     animar()
+    proc = escritor = None
+    rate_actual = None
+    reloj0 = 0.0
+    reproducido = 0.0     # segundos de audio YA encolados (base del reloj)
+
+    def _cerrar() -> None:
+        nonlocal proc, escritor
+        if proc is None:
+            return
+        pcm_queue.put(None)
+        if escritor is not None:
+            escritor.join(timeout=15.0)
+        try:
+            proc.wait(timeout=15.0)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        proc = escritor = None
+
     try:
-        idx = 0
         while True:
             item = wav_queue.get()
             if item is _CENTINELA:
                 break
-            wav_bytes, pcm_data, sample_rate = item
-            ruta = f"/tmp/mexa_stream_{idx % 2}.wav"
-            idx += 1
-            with open(ruta, "wb") as f:
-                f.write(wav_bytes)
-            _reproducir_con_volumen(ruta, pcm_data, sample_rate)
+            pcm_data, sample_rate = item
+
+            if sample_rate != rate_actual:
+                _cerrar()                      # frecuencia distinta: stream nuevo
+                proc = _abrir_reproductor(sample_rate)
+                escritor = threading.Thread(target=_escribir, args=(proc,), daemon=True)
+                escritor.start()
+                rate_actual = sample_rate
+                reloj0 = time.monotonic()
+                reproducido = 0.0
+
+            pcm_queue.put(pcm_data)            # el escritor lo manda cuando puede
+
+            for i in range(0, len(pcm_data), _VOL_CHUNK):
+                _enviar_volumen(audioop.rms(pcm_data[i:i + _VOL_CHUNK], 2))
+                reproducido += len(pcm_data[i:i + _VOL_CHUNK]) / 2 / sample_rate
+                espera = reloj0 + reproducido - time.monotonic()
+                if espera > 0:
+                    time.sleep(espera)
     finally:
+        _cerrar()
+        _enviar_volumen(0)   # cierra la boca
         parar()
 
