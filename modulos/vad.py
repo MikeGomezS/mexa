@@ -37,7 +37,36 @@ from collections import deque
 _BASE_DIR   = os.path.dirname(__file__)
 _MODELO_VAD = os.path.join(_BASE_DIR, "..", "media", "vad", "silero_vad.onnx")
 
-_SILENCIO_SEG  = 1.5   # segundos de silencio continuo para dejar de escuchar
+_SILENCIO_SEG  = 0.9   # segundos de silencio continuo para dejar de escuchar
+
+# Espera para las respuestas de UN SET CERRADO ("¿español o inglés?", "¿qué
+# civilización?"): el visitante dice UNA palabra y termina.
+#
+# HOY VALE LO MISMO QUE _SILENCIO_SEG, por decisión: se pidió que TODO el robot
+# respondiera igual de rápido, incluida la pregunta abierta y el wake word. La
+# constante y el cableado se dejan igual a propósito, porque son dos casos con
+# tolerancias distintas y volver a separarlos tiene que costar cambiar un número,
+# no rehacer la instalación.
+#
+# EL NÚMERO ESTÁ MEDIDO, no elegido a ojo. Con voz real y Silero (ver el
+# barrido en la sesión que lo introdujo):
+#
+#     silencio   tarda en cortar   tolera pausas de hasta
+#       0.6 s        +0.61 s              0.4 s
+#       0.8 s        +0.84 s              0.6 s
+#       0.9 s        +0.93 s              0.8 s     <- elegido
+#       1.5 s        +1.51 s              1.3 s     (el valor viejo)
+#
+# ASIMETRÍA DE COSTOS, la misma lógica que en dialogo._es_respuesta: cortar de
+# más le trunca la respuesta al visitante, la gramática cerrada no matchea nada
+# y MEXA vuelve a preguntar — unos 10 s. Cortar de menos cuesta décimas. Por eso
+# NO se baja a 0.6 aunque sea más rápido: "los... eh... olmecas" es una frase
+# de museo perfectamente normal, y a 0.6 s queda cortada en el "los".
+#
+# EN LA PREGUNTA ABIERTA el mismo 0.9 s es más filoso, porque ahí la gente sí se
+# frena a mitad de frase. Pero truncar ahí es BARATO: MEXA contesta lo que oyó y
+# el visitante repregunta. No pierde el turno, como sí pasa con la gramática.
+SILENCIO_CERRADO = 0.9
 _MIN_HABLA_SEG = 0.3   # segundos mínimos de habla antes de activar el corte
 
 _RATE_VAD = 16000      # el VAD ve el audio ya remuestreado, igual que Vosk
@@ -205,9 +234,10 @@ class _SeguimientoHabla:
     conversación — el visitante no debería notar qué VAD corre adentro.
     """
 
-    def __init__(self):
+    def __init__(self, silencio: float | None = None):
         self.habla_inicio:    float | None = None
         self.silencio_inicio: float | None = None
+        self.silencio = _SILENCIO_SEG if silencio is None else silencio
 
     def observar(self, hay_voz: bool, ahora: float) -> bool:
         """Devuelve True cuando el visitante terminó de hablar."""
@@ -218,7 +248,7 @@ class _SeguimientoHabla:
         elif self.habla_inicio and (ahora - self.habla_inicio) >= _MIN_HABLA_SEG:
             if self.silencio_inicio is None:
                 self.silencio_inicio = ahora
-            elif ahora - self.silencio_inicio >= _SILENCIO_SEG:
+            elif ahora - self.silencio_inicio >= self.silencio:
                 return True   # silencio prolongado → dejar de escuchar
         return False
 
@@ -232,9 +262,9 @@ class _DetectorBase:
     ruido) sin depender de que haya alguien hablándole al robot.
     """
 
-    def __init__(self):
+    def __init__(self, silencio: float | None = None):
         self.muestras: list[int] = []
-        self._seguimiento = _SeguimientoHabla()
+        self._seguimiento = _SeguimientoHabla(silencio)
 
     def observar(self, pcm: bytes, ahora: float) -> bool:
         """Procesa un chunk. Devuelve True cuando el visitante terminó."""
@@ -257,8 +287,8 @@ class DetectorVoz(_DetectorBase):
     levante el piso de ruido, y el VAD se cortaría solo.
     """
 
-    def __init__(self, umbral: int | None = None):
-        super().__init__()
+    def __init__(self, umbral: int | None = None, silencio: float | None = None):
+        super().__init__(silencio)
         self.umbral = umbral_actual() if umbral is None else umbral
 
     @property
@@ -335,8 +365,8 @@ class DetectorVozNeural(_DetectorBase):
     """
 
     def __init__(self, prob_minima: float = _PROB_VOZ,
-                 piso: float | None = None):
-        super().__init__()
+                 piso: float | None = None, silencio: float | None = None):
+        super().__init__(silencio)
         import numpy as np
         self._np          = np
         self.prob_minima  = prob_minima
@@ -379,7 +409,7 @@ class DetectorVozNeural(_DetectorBase):
                 f"energía ≥ {self.umbral_energia})")
 
 
-def crear_detector(piso: float | None = None):
+def crear_detector(piso: float | None = None, silencio: float | None = None):
     """Devuelve el mejor detector disponible.
 
     Silero si está instalado; energía si no. La degradación es a propósito
@@ -393,7 +423,11 @@ def crear_detector(piso: float | None = None):
     todavía no cargado. Sin esto, ese script tenía que decidir por su
     cuenta QUÉ detector corre y CON QUÉ umbral — y esa duplicación fue
     justo lo que lo hizo dictar veredicto contra el detector equivocado.
+
+    `silencio` acorta la espera de silencio para este detector. Lo usa quien
+    ya sabe que la respuesta es de un set cerrado (ver SILENCIO_CERRADO).
     """
     if vad_neural_disponible():
-        return DetectorVozNeural(piso=piso)
-    return DetectorVoz(None if piso is None else umbral_desde_piso(piso))
+        return DetectorVozNeural(piso=piso, silencio=silencio)
+    return DetectorVoz(None if piso is None else umbral_desde_piso(piso),
+                       silencio=silencio)

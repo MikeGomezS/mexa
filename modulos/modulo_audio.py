@@ -26,7 +26,8 @@ from vosk import Model, KaldiRecognizer
 from . import vad
 from .captura import CapturaPipeWire, RATE as _RATE_CAPTURA
 from .captura import abrir as _abrir_captura, elegir_nodo
-from .vad import crear_detector, quitar_dc, registrar_ruido, umbral_actual
+from .vad import (SILENCIO_CERRADO, crear_detector, quitar_dc,
+                  registrar_ruido, umbral_actual)
 
 _BASE_DIR = os.path.dirname(__file__)
 _MODELOS_DIR = {
@@ -170,13 +171,17 @@ def calibrar_ruido_ambiente(segundos: float = 1.5) -> int:
 _cargar_modelo("es")
 
 
-def _escuchar(timeout: float, recognizers: dict[str, KaldiRecognizer]) -> dict[str, str]:
+def _escuchar(timeout: float, recognizers: dict[str, KaldiRecognizer],
+              silencio: float | None = None) -> dict[str, str]:
     """Captura audio del micrófono y lo decodifica con VARIOS recognizers a la vez.
 
     Es el motor común: lee el stream una sola vez y alimenta el mismo
     chunk a cada recognizer, así todos oyen EXACTAMENTE el mismo audio.
     El VAD (modulos/vad.py) decide cuándo el visitante dejó de hablar,
     con el ruido de sala medido hasta este momento como referencia.
+
+    `silencio` acorta esa espera cuando quien llama YA SABE que la respuesta
+    es de un set cerrado (ver vad.SILENCIO_CERRADO).
 
     Retorna {clave: texto} con el resultado final de cada recognizer.
     """
@@ -191,10 +196,11 @@ def _escuchar(timeout: float, recognizers: dict[str, KaldiRecognizer]) -> dict[s
         print(f"[AUDIO] Error al preparar stream: {e}")
         return {clave: "" for clave in recognizers}
 
-    detector       = crear_detector()
+    detector       = crear_detector(silencio=silencio)
     limite         = time.time() + timeout
     resample_state = None
     print(f"[AUDIO] Escuchando... (ruido de sala {int(vad.piso_actual())} RMS, "
+          f"corta tras {detector._seguimiento.silencio}s de silencio, "
           f"VAD: {detector})")
 
     try:
@@ -293,7 +299,13 @@ def escuchar_multilingue(timeout: float, idiomas,
         recognizers[i] = (KaldiRecognizer(modelo, _VOSK_RATE, gramaticas[i])
                           if i in gramaticas else
                           KaldiRecognizer(modelo, _VOSK_RATE))
-    return _escuchar(timeout, recognizers) if recognizers else {}
+    if not recognizers:
+        return {}
+    # Que haya gramática ES la señal de que la respuesta es de un set cerrado:
+    # ahí se corta antes. Sin gramática (el wake word) se usa la espera larga,
+    # porque el visitante puede estar diciendo cualquier otra cosa.
+    return _escuchar(timeout, recognizers,
+                     silencio=SILENCIO_CERRADO if gramaticas else None)
 
 
 def escuchar_idioma(timeout=8) -> str | None:
@@ -321,7 +333,9 @@ def escuchar_idioma(timeout=8) -> str | None:
     if not recognizers:
         return None
 
-    return decidir_idioma(_escuchar(timeout, recognizers))
+    # Siempre gramática cerrada: se responde con UNA palabra.
+    return decidir_idioma(_escuchar(timeout, recognizers,
+                                    silencio=SILENCIO_CERRADO))
 
 
 def decidir_idioma(textos: dict[str, str]) -> str | None:
