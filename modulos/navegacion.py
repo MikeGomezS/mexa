@@ -81,6 +81,110 @@ AVANCE_CIEGO_FINAL_S    = 4.0   # empuje A CIEGAS: sólo se usa si los ultrasón
                                 # ~2.5 cm/s -> 4s ≈ 10cm. SEGURIDAD: no lo subas tanto
                                 # que MEXA choque con el visitante.
 
+# ── Acercamiento SIN cámara (el ultrasonido como único sentido) ─
+# Cuando la cámara no entrega NI UNA cara en toda la fase visual, MEXA se
+# quedaba clavada: `asegurar_avance()` vive dentro de la rama de una lectura
+# REAL, así que sin cara no salía un solo 'F'. Tenía cuatro ultrasónicos
+# ociosos y ningún camino de movimiento que no pasara por los ojos.
+#
+# ESTE SENTIDO VE MENOS, Y HAY QUE DECIRLO. No reemplaza a la cámara:
+#   · ALCANCE ~2m — ECHO_TIMEOUT_FRENTE_US = 12000us (mexa.ino:196). Más
+#     lejos el firmware manda 999.0 (telemetria.SIN_ECO_CM), que no es un
+#     error: es "no hay nadie dentro del alcance".
+#   · NO DA RUMBO — dice cuánto falta, no hacia dónde. MEXA avanza DERECHO;
+#     si el visitante está de costado, no lo va a encontrar. Girar a ciegas
+#     buscándolo sería pasear un robot por una sala llena de gente.
+#   · SÓLO MIDE EN MARCHA — `vigilarFrente()` corre únicamente durante una
+#     'F'. Por eso no se puede mirar antes de arrancar: para saber si hay
+#     alguien HAY que empezar a caminar.
+ALCANCE_FRENTE_CM       = 200.0 # techo físico del frontal. Una lectura de acá para
+                                # arriba (999.0 incluido) es "nadie a la vista", no
+                                # una distancia. NO lo subas: el sensor no ve más
+                                # lejos por cambiarle un número a la Pi.
+PACIENCIA_FRENTE_S      = 1.5   # cuánto se aguanta sin una lectura ÚTIL antes de
+                                # rendirse. Cubre dos casos distintos con el mismo
+                                # número: el sensor que nunca contesta (no está) y
+                                # el que contesta 999 sostenido (no hay nadie). El
+                                # firmware reporta cada 200ms, así que 1.5s son ~7
+                                # ventanas: un eco perdido suelto no aborta nada,
+                                # que un cuerpo es blando y oblicuo y se pierde de
+                                # a ratos.
+CIEGO_TIMEOUT_S         = 20.0  # tope del acercamiento sin cámara. A ~2.5cm/s son
+                                # ~50cm: alcanza para cerrar desde ~120cm, NO desde
+                                # los 200cm del alcance del sensor. Es a propósito:
+                                # un visitante no espera 52s parado, y MEXA acercada
+                                # a 120cm ya puede hablarle.
+
+
+def _acercamiento_a_ciegas(fin):
+    """Se acerca al visitante con el ULTRASONIDO como único sentido, cuando la
+    cámara no entregó ni una cara en toda la fase visual.
+
+    NO ES EL EMPUJE FINAL, aunque se le parezca. `_empuje_final()` cierra el
+    último tramo DESPUÉS de haber visto la cara: tiene testigo de que hay
+    alguien ahí, y por eso puede permitirse empujar a ciegas por tiempo si el
+    sensor no contesta. Acá no hay testigo de nada. Si el frente no habla, MEXA
+    NO empuja: sin cámara y sin ultrasonido no queda un solo sentido que diga
+    que hay una persona, y avanzar por las dudas contra un visitante no es un
+    fallback, es una apuesta.
+
+    `fin` es el deadline de TODA la maniobra (time.time()): manda sobre el
+    presupuesto propio, nunca al revés.
+
+    Devuelve el motivo del freno, para que el log diga qué decidió y con qué:
+      'medido'     llegó a DISTANCIA_OBJETIVO_CM (el caso bueno)
+      'reflejo'    el firmware frenó solo: alguien se metió delante
+      'sin_sensor' el frontal no contestó nunca -> se rinde sin empujar
+      'nadie'      contestó 999 sostenido: no hay nadie dentro de los 2m
+      'tope'       se acabó el tiempo con el visitante todavía lejos
+    """
+    reiniciar_frente()          # el firmware mide de cero en cada avance
+    inicio = time.monotonic()
+    presupuesto = min(CIEGO_TIMEOUT_S, max(0.0, fin - time.time()))
+    mover_adelante()            # hay que caminar para que el frontal mida
+    hubo_lectura = False        # ¿el sensor contestó ALGUNA vez?
+    sello_util = inicio         # cuándo se vio por última vez algo dentro del alcance
+    try:
+        while True:
+            ahora = time.monotonic()
+
+            frenado = freno_por_persona()
+            if frenado is not None:
+                print(f"[NAV] A ciegas: el Arduino frenó SOLO a {frenado:.0f}cm "
+                      f"(reflejo de seguridad).")
+                return "reflejo"
+
+            distancia = distancia_frontal_cm()
+            if distancia is not None:
+                hubo_lectura = True
+                if distancia < ALCANCE_FRENTE_CM:
+                    sello_util = ahora
+                    if distancia <= DISTANCIA_OBJETIVO_CM:
+                        print(f"[NAV] A ciegas: llegué a {distancia:.0f}cm sin ver "
+                              f"una cara (objetivo {DISTANCIA_OBJETIVO_CM:.0f}cm).")
+                        return "medido"
+
+            if not hubo_lectura and ahora - inicio >= PACIENCIA_FRENTE_S:
+                print(f"[NAV] A ciegas: el frente no contestó en "
+                      f"{PACIENCIA_FRENTE_S:.1f}s. Sin cámara Y sin ultrasonido "
+                      f"no empujo: no sé si hay alguien.")
+                return "sin_sensor"
+
+            if hubo_lectura and ahora - sello_util >= PACIENCIA_FRENTE_S:
+                print(f"[NAV] A ciegas: nada dentro de {ALCANCE_FRENTE_CM:.0f}cm "
+                      f"durante {PACIENCIA_FRENTE_S:.1f}s. No hay nadie al frente.")
+                return "nadie"
+
+            if ahora - inicio >= presupuesto:
+                ultima = f"{distancia:.0f}cm" if distancia is not None else "sin lectura"
+                print(f"[NAV] A ciegas: TOPE de {presupuesto:.1f}s ({ultima}). "
+                      f"Me quedo acá y le hablo desde donde estoy.")
+                return "tope"
+
+            time.sleep(POLL_FRENTE_S)
+    finally:
+        detener()   # el 'S' propio: el registro del camino tiene que decir la verdad
+
 
 def _girar_vigilado(posicion):
     """Gira un pulso hacia `posicion`, pero VIGILANDO que el firmware no haya
@@ -256,6 +360,16 @@ def acercarse_a_usuario():
                           f"(últ={ult_tamano:.0%}, centro) -> recorte. "
                           f"Cierro el último tramo.")
                     _empuje_final()
+                elif primera_cara:
+                    # NUNCA hubo una cara: no es que se perdió, es que la
+                    # cámara no vio nada en toda la fase. Distinguirlo importa,
+                    # porque son dos mundos: "se fue" no se arregla caminando,
+                    # "no veo" sí — con el otro sentido. El PIR ya dijo que hay
+                    # alguien (main.ciclo_principal sólo llama acá después de
+                    # _esperar_persona), así que MEXA no sale a inventar gente.
+                    print("[NAV] Acercamiento: la cámara no vio NI UNA cara. "
+                          "Paso al ultrasonido.")
+                    _acercamiento_a_ciegas(fin)
                 else:
                     print(f"[NAV] Acercamiento: cara perdida LEJOS/descentrada "
                           f"(últ={ult_tamano:.0%}, {ult_posicion}) -> no empujo.")
