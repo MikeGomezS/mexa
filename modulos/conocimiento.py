@@ -4,6 +4,8 @@
 #  El contexto se inyecta en la pregunta antes de enviarla a la IA.
 # ============================================================
 
+import re
+
 _BASE: list[dict] = [
     {
         "tema": "teotihuacan",
@@ -12,6 +14,12 @@ _BASE: list[dict] = [
             "pirámide del sol", "pirámide de la luna",
             "calzada de los muertos", "quetzalcóatl",
             "serpiente emplumada", "ciudad de los dioses",
+            # — formas en INGLÉS —
+            "pyramid of the sun",
+            "pyramid of the moon",
+            "feathered serpent",
+            "city of the gods",
+            "avenue of the dead",
         ],
         "hechos": (
             "Teotihuacán es una ciudad mesoamericana; pertenece a la cultura teotihuacana. "
@@ -42,6 +50,14 @@ _BASE: list[dict] = [
             "quinto sol", "chinampas", "calendario azteca",
             "piedra del sol", "triple alianza",
             "noche triste", "cacao", "chocolate",
+            # — formas en INGLÉS —
+            "aztec",
+            "aztecs",
+            "great temple",
+            "sun stone",
+            "floating gardens",
+            "triple alliance",
+            "aztec calendar",
         ],
         "hechos": (
             "Los aztecas (también llamados mexicas) fundaron Tenochtitlán en 1325 d.C. en un islote del lago Texcoco, "
@@ -72,6 +88,12 @@ _BASE: list[dict] = [
             "calendario maya", "cenote", "popol vuh",
             "kukulcán", "el castillo", "juego de pelota",
             "escritura maya", "cero maya",
+            # — formas en INGLÉS —
+            "mayan",
+            "mayans",
+            "ball game",
+            "mayan writing",
+            "mayan calendar",
         ],
         "hechos": (
             "Los mayas son una civilización mesoamericana que floreció en el sureste de México "
@@ -101,6 +123,13 @@ _BASE: list[dict] = [
             "cabeza colosal", "cabezas colosales",
             "san lorenzo", "la venta", "tres zapotes",
             "cultura madre", "hule", "goma",
+            # — formas en INGLÉS —
+            "olmec",
+            "olmecs",
+            "colossal head",
+            "colossal heads",
+            "mother culture",
+            "rubber",
         ],
         "hechos": (
             "Los olmecas fueron la primera gran civilización de Mesoamérica (~1500–400 a.C.), "
@@ -128,6 +157,11 @@ _BASE: list[dict] = [
             "ce ácatl", "ce acatl", "topiltzin",
             "quetzalcóatl tolteca",
             "cultura tolteca",
+            # — formas en INGLÉS —
+            "toltec",
+            "toltecs",
+            "atlanteans",
+            "toltec culture",
         ],
         "hechos": (
             "Los toltecas fueron una civilización mesoamericana que floreció aproximadamente entre 800 y 1150 d.C., "
@@ -156,6 +190,11 @@ _BASE: list[dict] = [
             "oaxaca", "dainzú", "mitla",
             "urna funeraria", "glifos zapotecos",
             "cultura zapoteca", "valle de oaxaca",
+            # — formas en INGLÉS —
+            "zapotec",
+            "zapotecs",
+            "funerary urn",
+            "zapotec culture",
         ],
         "hechos": (
             "Los zapotecas son una de las civilizaciones más antiguas de Mesoamérica, "
@@ -186,6 +225,12 @@ _BASE: list[dict] = [
             "tilantongo", "coixtlahuaca",
             "orfebres", "orfebrería mixteca",
             "cultura mixteca",
+            # — formas en INGLÉS —
+            "mixtec",
+            "mixtecs",
+            "people of the clouds",
+            "goldsmiths",
+            "mixtec culture",
         ],
         "hechos": (
             "Los mixtecas son una civilización mesoamericana originaria del noroeste de Oaxaca "
@@ -221,6 +266,11 @@ _BASE: list[dict] = [
             "guerra de independencia",
             "1810", "1821", "16 de septiembre",
             "ejército trigarante", "conspiración de querétaro",
+            # — formas en INGLÉS —
+            "independence",
+            "mexican independence",
+            "cry of dolores",
+            "war of independence",
         ],
         "hechos": (
             "La Guerra de Independencia de México duró del 16 de septiembre de 1810 al 27 de septiembre de 1821. "
@@ -258,6 +308,10 @@ _BASE: list[dict] = [
             "división del norte",
             "1910", "1917", "constitución de 1917",
             "tierra y libertad",
+            # — formas en INGLÉS —
+            "revolution",
+            "mexican revolution",
+            "land and liberty",
         ],
         "hechos": (
             "La Revolución Mexicana comenzó el 20 de noviembre de 1910, fecha que hoy se conmemora como el "
@@ -298,6 +352,12 @@ _BASE: list[dict] = [
             "popocatépetl", "iztaccíhuatl", "volcán",
             "megadiverso", "biodiversidad",
             "patrimonio unesco", "sitios patrimonio",
+            # — formas en INGLÉS —
+            "mexican flag",
+            "day of the dead",
+            "national anthem",
+            "mexican food",
+            "coat of arms",
         ],
         "hechos": (
             "México es una república federal de 31 estados más la Ciudad de México como capital federal. "
@@ -345,13 +405,28 @@ def buscar_contexto(pregunta: str) -> str:
     """
     Busca en la base de conocimiento hechos relevantes para la pregunta.
     Regresa un string con los hechos, o cadena vacía si no hay match.
+
+    COMPARA POR PALABRA COMPLETA, no por subcadena. Con subcadena, la clave
+    "mexica" (de los Aztecas) vivía adentro de "mexican" y de "mexicana": una
+    pregunta sobre la Revolución Mexicana en inglés se llevaba los hechos de
+    los AZTECAS, y "i love mexican food" también. Es el MISMO footgun que ya
+    había pagado `contenido.detectar_civilizacion` — allá proyectaba el video
+    equivocado, acá le mete al modelo hechos de otro tema.
+
+    Y ese error es caro por un motivo que no se ve: las respuestas las genera
+    `llama3.2:1b`, mil millones de parámetros. Un modelo así no tiene con qué
+    desconfiar del contexto que le pasan — si le das hechos aztecas para una
+    pregunta sobre la Revolución, los usa.
+
+    Las claves multi-palabra ("calzada de los muertos") siguen andando: el
+    límite \\b se aplica en los dos extremos de la frase entera.
     """
     pregunta_lower = pregunta.lower()
     encontrados = []
 
     for entrada in _BASE:
         for clave in entrada["palabras_clave"]:
-            if clave in pregunta_lower:
+            if re.search(rf"\b{re.escape(clave.lower())}\b", pregunta_lower):
                 encontrados.append(_resumir(entrada["hechos"]))
                 break  # un match por tema es suficiente
 
