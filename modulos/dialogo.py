@@ -7,7 +7,6 @@
 #  que le dice a `ciclo_principal` qué hacer después.
 # ============================================================
 
-import json
 import re
 import time
 from enum import Enum, auto
@@ -88,10 +87,54 @@ def _dijo(frase: str, claves: set[str]) -> bool:
     Normaliza ambos lados y busca cada clave con límites de palabra (\\b).
     Evita el footgun del match por subcadena: "no" ya no se dispara dentro
     de "bueno"/"conocían", y soporta claves multi-palabra como "hasta
-    luego" o "empecemos de nuevo"."""
+    luego" o "empecemos de nuevo".
+
+    OJO: esto pregunta si la frase CONTIENE la clave. Para las palabras de
+    control de la conversación eso NO alcanza — usá `_es_respuesta`."""
     secuencia = _normalizar(frase)
     return any(re.search(rf"\b{re.escape(_normalizar(clave))}\b", secuencia)
                for clave in claves)
+
+
+# Palabras que pueden sobrar alrededor de una respuesta sin cambiar lo que
+# significa: cortesía y muletillas. NO se listan sustantivos ni verbos — si
+# sobra contenido, entonces la frase era una pregunta y no una respuesta.
+_RELLENO = {
+    "gracias", "muchas", "mucha", "por", "favor", "señor", "señora",
+    "thanks", "thank", "you", "please", "sir", "maam", "ma", "am",
+    "ok", "okay", "bueno", "listo", "ya", "eh", "este", "mexa",
+}
+
+
+def _es_respuesta(frase: str, claves: set[str]) -> bool:
+    """True si la frase ES esa respuesta, no si apenas la CONTIENE.
+
+    POR QUÉ NO ALCANZA `_dijo`. MEXA pregunta "¿tienes alguna pregunta?" y
+    escucha con vocabulario ABIERTO, así que lo que vuelve puede ser una
+    respuesta corta o una pregunta entera. Buscar la palabra suelta confunde
+    las dos cosas, y en español la confusión es constante: "¿por qué NO
+    usaban la rueda?" se leía como "no tengo preguntas" y MEXA se despedía a
+    mitad de la visita. "¿cuándo va a TERMINAR el video?" APAGABA el robot.
+
+    Un "no" solo significa "no tengo preguntas". Un "no" adentro de seis
+    palabras significa lo contrario: ES la pregunta. La regla, entonces: se
+    saca del texto TODA clave que aparezca, y lo que queda tiene que ser
+    puro relleno de cortesía. Si sobró contenido, era una pregunta.
+
+    Las claves se sacan de la más larga a la más corta para que "no gracias"
+    se consuma entera antes de que "no" le coma la mitad.
+
+    ASIMETRÍA DE COSTOS. Irse de más es caro — MEXA abandona a alguien que
+    estaba preguntando. Irse de menos es barato: contesta de más, y el
+    visitante se despide o se va (lo agarra el PIR). Ante la duda, NO irse:
+    por eso el relleno es corto y no incluye ni sustantivos ni verbos.
+    """
+    secuencia = _normalizar(frase)
+    if not _dijo(secuencia, claves):
+        return False
+    for clave in sorted(claves, key=len, reverse=True):
+        secuencia = re.sub(rf"\b{re.escape(_normalizar(clave))}\b", " ", secuencia)
+    return all(palabra in _RELLENO for palabra in secuencia.split())
 
 
 def esperar_activacion() -> None:
@@ -108,10 +151,17 @@ def esperar_activacion() -> None:
     decodificarla como lo que es en vez de forzarla contra una frase de
     activación. Ver tests/test_activacion.py."""
     print("[DIALOGO] MEXA en reposo. Decí 'comencemos' / \"let's begin\" para activarla.")
+    cambiar_expresion("dormido")
     while True:
         textos = escuchar_multilingue(timeout=8, idiomas=_ACTIVACION.keys())
         if any(_dijo(t, _PALABRAS_ACTIVACION) for t in textos.values()):
             print("[DIALOGO] Activada por voz.")
+            # Se despierta de golpe y enseguida queda atenta buscando a la
+            # persona. El sobresalto tiene que durar POCO: sostenido deja de
+            # leerse como sobresalto y pasa a leerse como cara rara.
+            cambiar_expresion("sorprendido")
+            time.sleep(1.2)
+            cambiar_expresion("escuchando")
             return
 
 
@@ -123,16 +173,34 @@ def _seleccionar_idioma() -> str:
     "english" en la salida del modelo español era frágil: ese modelo no
     tiene los fonemas /ɪ/ ni /ʃ/, y con el ruido real de la exhibición
     la pronunciación inglesa se le desarmaba."""
-    cambiar_expresion("pensando")
+    # Saluda CONTENTA, no pensando: es lo primero que ve cada visitante, y
+    # "pensando" además tiene boca_vol=0, así que MEXA daba la bienvenida con
+    # la boca congelada. Lo encontró tests/test_expresiones.py.
+    cambiar_expresion("feliz")
     hablar("Hi, I am MEXA. Would you prefer Spanish or English?")
     for _ in range(INTENTOS_MAX):
         cambiar_expresion("escuchando")
         idioma = escuchar_idioma(timeout=8)
         if idioma:
             return idioma
-        cambiar_expresion("hablando")
+        cambiar_expresion("confundido")
         hablar("Please say 'español' or 'English'.")
     return "es"   # museo en México: ante la duda, español
+
+
+def _despedirse(f: dict, contenta: bool) -> None:
+    """Se despide con la cara que corresponde a CÓMO terminó la charla.
+
+    Contenta si el visitante se despidió; algo triste si lo dejaron hablando
+    solo (silencio, sin respuestas, sin elegir civilización). Es la diferencia
+    entre "chau, gracias por venir" y "bueno... me quedé sola". Un robot que
+    se despide igual en los dos casos no se lee como que le importe.
+
+    La pausa de 3 s es la de siempre: le da al visitante el tiempo de registrar
+    que MEXA está por cerrar, en vez de soltarle la despedida encima."""
+    cambiar_expresion("feliz" if contenta else "triste")
+    time.sleep(3)
+    hablar(f["despedida"])
 
 
 def _ciclo_preguntas(f: dict, idioma: str) -> Resultado:
@@ -147,9 +215,7 @@ def _ciclo_preguntas(f: dict, idioma: str) -> Resultado:
 
     while True:
         if time.time() - tiempo_ultimo > TIEMPO_ESPERA_USUARIO:
-            cambiar_expresion("hablando")
-            time.sleep(3)
-            hablar(f["despedida"])
+            _despedirse(f, contenta=False)      # se quedó callado y se fue
             return Resultado.ESPERAR
 
         cambiar_expresion("escuchando")
@@ -158,30 +224,24 @@ def _ciclo_preguntas(f: dict, idioma: str) -> Resultado:
         if not pregunta:
             intentos_sin_respuesta += 1
             if intentos_sin_respuesta >= INTENTOS_MAX:
-                cambiar_expresion("hablando")
-                time.sleep(3)
-                hablar(f["despedida"])
+                _despedirse(f, contenta=False)  # tres veces sin oír nada
                 return Resultado.ESPERAR
-            cambiar_expresion("hablando")
+            cambiar_expresion("confundido")
             hablar(f["no_entendio"])
             continue
 
         intentos_sin_respuesta = 0
         tiempo_ultimo = time.time()
 
-        if _dijo(pregunta, _PALABRAS_REINICIO):
+        if _es_respuesta(pregunta, _PALABRAS_REINICIO):
             return Resultado.REINICIAR
 
-        if _dijo(pregunta, _PALABRAS_APAGAR):
-            cambiar_expresion("hablando")
-            time.sleep(3)
-            hablar(f["despedida"])
+        if _es_respuesta(pregunta, _PALABRAS_APAGAR):
+            _despedirse(f, contenta=True)
             return Resultado.APAGAR
 
-        if _dijo(pregunta, _PALABRAS_SALIDA):
-            cambiar_expresion("hablando")
-            time.sleep(3)
-            hablar(f["despedida"])
+        if _es_respuesta(pregunta, _PALABRAS_SALIDA):
+            _despedirse(f, contenta=True)       # se despidió él: buena onda
             return Resultado.ESPERAR
 
         cambiar_expresion("pensando")
@@ -209,14 +269,10 @@ def ciclo_interaccion() -> Resultado:
     establecer_idioma(idioma)
     f = contenido.FRASES[idioma]
 
-    nombres_disp = (
-        contenido.NOMBRES_DISPONIBLES if idioma == "es"
-        else [contenido.NOMBRES_EN[n] for n in contenido.NOMBRES_DISPONIBLES]
-    )
-    oferta = ", ".join(nombres_disp)
+    oferta = ", ".join(contenido.nombres_ofrecidos(idioma))
 
     # 1. Presentación y oferta de civilizaciones
-    cambiar_expresion("hablando")
+    cambiar_expresion("feliz")
     hablar(f["saludo_civ"].format(oferta=oferta))
 
     # 2. Escuchar la elección (con reintentos)
@@ -233,8 +289,7 @@ def ciclo_interaccion() -> Resultado:
     #
     # `detectar_civilizacion_multi` exige que los modelos no se contradigan
     # antes de dar la elección por buena.
-    gramaticas = {i: json.dumps(g)
-                  for i, g in contenido.GRAMATICA_CIVILIZACIONES.items()}
+    gramaticas = contenido.gramaticas_json()
     video_info = None
     intentos = 0
     while video_info is None and intentos < INTENTOS_MAX:
@@ -243,7 +298,7 @@ def ciclo_interaccion() -> Resultado:
         video_info = contenido.detectar_civilizacion_multi(textos, idioma)
         if video_info is None:
             intentos += 1
-            cambiar_expresion("hablando")
+            cambiar_expresion("confundido")
             # Distinguir "no oí nada" de "oí algo que no era una civilización":
             # al visitante le sirve saber si tiene que hablar más fuerte o
             # elegir otra cosa.
@@ -251,22 +306,26 @@ def ciclo_interaccion() -> Resultado:
                    else f["no_reconocio"].format(oferta=oferta))
 
     if video_info is None:
-        cambiar_expresion("hablando")
-        time.sleep(3)
-        hablar(f["despedida"])
+        _despedirse(f, contenta=False)          # no llegó a elegir nada
         return Resultado.ESPERAR
 
     ruta_video, nombre_civ_es = video_info
     nombre_civ = contenido.NOMBRES_EN[nombre_civ_es] if idioma == "en" else nombre_civ_es
 
+    # MEXA entendió qué eligió el visitante. Un guiño de complicidad antes de
+    # entusiasmarse: necesita durar para leerse — abajo de medio segundo se lo
+    # come la transición y no se ve nunca.
+    cambiar_expresion("guino")
+    time.sleep(0.45)
+
     # 3. Reproducir el video en el idioma seleccionado
-    cambiar_expresion("hablando")
+    cambiar_expresion("emocionado")
     hablar(f["intro_video"].format(nombre=nombre_civ))
     reproducir_video(ruta_video)
 
     # 5. Preguntar si tienen dudas
     time.sleep(3)
-    cambiar_expresion("hablando")
+    cambiar_expresion("feliz")
     hablar(f["post_video"].format(nombre=nombre_civ))
 
     # 6 y 7. Ciclo de preguntas con IA + despedida. Propaga el Resultado.
