@@ -31,7 +31,8 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from modulos.modulo_motores import iniciar_motores, mover_por_tiempo, detener
+from modulos.modulo_motores import (iniciar_motores, mover_por_tiempo, detener,
+                                     PULSO_GIRO_S)
 from modulos.modulo_camara import iniciar_camara, localizar_cara, apagar_camara
 
 # --- COPIA de las constantes de main.py (fuente de verdad: main.py) ----------
@@ -41,8 +42,8 @@ ACERCAMIENTO_TIMEOUT_S  = 30.0
 # cara se recorta antes (~25%). Sirve solo como corte si por geometría rara la
 # cara llegara a verse enorme. El freno real lo da la pérdida de cara + empuje.
 TAMANO_CARA_OBJETIVO    = 0.40
-PULSO_AVANCE_S          = 0.6
-PULSO_GIRO_S            = 0.25
+PULSO_AVANCE_S          = 0.6   # propio del calibrador: el lazo real avanza CONTINUO.
+                                # PULSO_GIRO_S se importa de modulo_motores (fuente única).
 MAX_MISSES_ACERCAMIENTO = 6
 SETTLE_S                = 0.35   # respiro anti-blur tras cada pulso
 # Empuje ciego final: cuánto avanza a ciegas tras perder la cara por cercanía.

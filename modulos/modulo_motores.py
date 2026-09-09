@@ -1,21 +1,59 @@
 # ============================================================
 #  MEXA — Módulo 05: Control de Motores DC
-#  Hardware: 2x Motor DC + puente H MX1508/TC1508A + Arduino (USB Serial)
+#  Hardware: 4x Motor DC + puente(s) H tipo MX1508 + Arduino (USB Serial)
 #
-#  CONEXIONES ARDUINO → puente H (ver arduino/mexa/mexa.ino):
-#    Motor Izquierdo  IN1 → D4    IN2 → D5
-#    Motor Derecho    IN3 → D6    IN4 → D7
+#  CONEXIONES ARDUINO → puente H (fuente: arduino/mexa/mexa.ino:68-78):
+#    Motor 0 → D2, D3  ┐ LADO IZQUIERDO
+#    Motor 1 → D4, D5  ┘
+#    Motor 2 → D6, D7  ┐ LADO DERECHO (montados en espejo: el firmware les
+#    Motor 3 → D8, D9  ┘ invierte el sentido por software, sin tocar cables)
 #
-#  PROTOCOLO SERIAL (manejado por el firmware unificado):
-#    F → adelante   B → atrás   R → girar derecha   L → girar izquierda   S → stop
+#  SIN PWM. El firmware maneja los pines con digitalWrite: cada motor está a
+#  fondo o parado, no hay estado intermedio. Por eso los parámetros `velocidad`
+#  de las funciones de acá se aceptan pero se IGNORAN — se dejan para no romper
+#  a quien ya las llama, y para el día que haya un driver con PWM. Lo único que
+#  se elige por software es CUÁNTO DURA el movimiento (ver PULSO_GIRO_S).
 #
-#  NOTA: la conexión serial es COMPARTIDA con los brazos
+#  PROTOCOLO SERIAL (firmware unificado, arduino/mexa/mexa.ino:345-364):
+#    Conducir      F → adelante   B → atrás
+#                  R → girar derecha   L → girar izquierda   S → stop
+#    Diagnóstico   1..4 → mueve UN solo motor (0..3) y frena el resto
+#    Brazos        H → gesticular   P → volver a reposo
+#    El Arduino responde "OK <cmd>" a cada comando que reconoce.
+#
+#  EL FIRMWARE FRENA SOLO. Mientras hay un 'F' activo vigila los ultrasónicos
+#  frontales y frena si alguien está demasiado cerca; durante un 'R'/'L' vigila
+#  el lateral de ese lado y cancela el giro si hay pared. O sea: un comando
+#  puede terminar ANTES de lo que esta capa pidió. Quien necesite saberlo
+#  consulta freno_por_persona() en conexion_arduino.py.
+#
+#  NOTA: la conexión serial es COMPARTIDA con los brazos y los sensores
 #  (un solo Arduino). El transporte vive en conexion_arduino.py.
 # ============================================================
 
 import time
 
 from .conexion_arduino import iniciar_conexion, enviar
+
+# ── Cuánto dura UN pulso de giro ─────────────────────────────
+# ÚNICA FUENTE DE VERDAD. Vive acá y no en el lazo de navegación porque es una
+# propiedad del TREN DE TRACCIÓN, no de la cámara: los motores no tienen PWM
+# (el firmware los maneja con digitalWrite, ver arduino/mexa/mexa.ino), así que
+# la velocidad angular es una constante de hardware. Lo único que se elige por
+# software es CUÁNTO RATO gira, y eso es esto.
+#
+# MÁS LARGO = MENOS PULSOS para encarar al visitante, y la maniobra completa
+# termina antes: cada pulso paga SETTLE_ACERCAMIENTO_S (0.35s) de tiempo muerto
+# anti-blur, así que barrer el mismo ángulo en 2 pulsos en vez de 3 ahorra una
+# tanda entera de ese peaje. El techo lo pone la banda central de la cámara
+# ([0.4, 0.6] del ancho, ver modulo_camara._clasificar_horizontal): si un pulso
+# barre MÁS que esa banda, MEXA se pasa de largo y oscila izquierda-derecha en
+# vez de converger.
+#
+# Historial: 0.25 -> 0.80 (giro menos entrecortado) -> 1.20 (menos pulsos).
+# MEDIR con `python3 tests/calibrar_pulsos.py giro` antes de volver a tocarlo.
+PULSO_GIRO_S = 1.20
+
 
 
 def iniciar_motores():
@@ -39,15 +77,35 @@ def detener():
     enviar("S")
 
 
+# Dirección en castellano -> comando del firmware. Una sola tabla: antes esto
+# era una cadena de `if` dentro de mover_por_tiempo, y quien necesitaba arrancar
+# un movimiento SIN dormir no tenía de dónde agarrarse.
+_COMANDO = {"adelante": "F", "atras": "B", "derecha": "R", "izquierda": "L"}
+
+
+def iniciar_movimiento(direccion):
+    """Manda el comando y VUELVE en el acto, con los motores en marcha.
+
+    Existe para los lazos que tienen que VIGILAR mientras se mueven — el
+    firmware frena solo (persona al frente, pared al girar), y quien duerme un
+    sleep ciego no se entera y termina anotando en el registro del camino un
+    movimiento que no pasó. Quien no necesite vigilar nada, que use
+    mover_por_tiempo(), que es esto más el sleep y el freno.
+
+    Devuelve True si la dirección era válida (si no, no manda nada)."""
+    cmd = _COMANDO.get(direccion)
+    if cmd is None:
+        print(f"[MOTORES] Dirección desconocida: {direccion!r}. No muevo nada.")
+        return False
+    enviar(cmd)
+    return True
+
+
 def mover_por_tiempo(direccion="adelante", segundos=1.0, velocidad=None):
-    if direccion == "adelante":
-        mover_adelante()
-    elif direccion == "atras":
-        mover_atras()
-    elif direccion == "derecha":
-        girar_derecha()
-    elif direccion == "izquierda":
-        girar_izquierda()
+    """Mueve `segundos` y frena. Movimiento CIEGO: no mira si el firmware
+    cortó por su cuenta. Si eso importa, mirá iniciar_movimiento()."""
+    if not iniciar_movimiento(direccion):
+        return
     time.sleep(segundos)
     detener()
 

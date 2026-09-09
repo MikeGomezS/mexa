@@ -23,6 +23,9 @@ _serial = None
 _rx_buffer = ""          # acumula bytes hasta tener líneas completas
 _presencia = False       # último estado de presencia reportado por el Arduino
 _frente = EstadoFrente() # distancia frontal + freno reflejo (ultrasónicos)
+_pared = None            # 'I'/'D' si el Arduino CANCELÓ un giro por pared lateral.
+                         # Vive acá y no en EstadoFrente porque el frente mira al
+                         # FRENTE: la pared es un corte de GIRO, otro eje.
 _observador = None       # callback(cmd) opcional: ve cada comando enviado
                          # (lo usa registro_camino para anotar el recorrido)
 
@@ -72,7 +75,7 @@ def _bombear():
 
     Cada llamada VACÍA el buffer de entrada, así que hay que bombear
     seguido: si el serial se llena, el Arduino se bloquea escribiendo."""
-    global _rx_buffer, _presencia
+    global _rx_buffer, _presencia, _pared
     if not (_serial and _serial.is_open):
         return
     try:
@@ -93,6 +96,8 @@ def _bombear():
             continue
         if evento[0] == "presencia":
             _presencia = evento[1]
+        elif evento[0] == "pared":
+            _pared = evento[1]
         else:
             _frente.anotar(evento, ahora)
 
@@ -129,6 +134,36 @@ def freno_por_persona():
     realidad del robot."""
     _bombear()
     return _frente.freno_cm()
+
+
+def pared_al_girar():
+    """'I'/'D' si el Arduino CANCELÓ SOLO un giro por tener una pared a menos
+    de UMBRAL_PARED_CM de ese lado, o None si no cortó desde el último giro.
+
+    Espejo exacto de freno_por_persona(), y por el mismo motivo: es un REFLEJO
+    YA EJECUTADO — cuando esto devuelve algo, los motores YA están parados. La
+    Pi no lo previene, se entera, y debe mandar su 'S' para que su estado Y EL
+    REGISTRO DEL CAMINO coincidan con lo que el robot hizo de verdad.
+
+    Sin esto el registro anota el pulso de giro COMPLETO aunque el firmware lo
+    haya cortado a la décima parte, y el regreso gira de más. Un error angular
+    no se suma al final: ROTA todos los tramos que vienen después."""
+    _bombear()
+    return _pared
+
+
+def reiniciar_pared():
+    """Olvida el corte por pared. Se llama al arrancar CADA giro, igual que
+    reiniciar_frente() con el avance: la pared del giro anterior no dice nada
+    de éste.
+
+    BOMBEA ANTES DE OLVIDAR, y el orden importa: si quedó un "WALL:" del giro
+    anterior todavía sin leer en el buffer, limpiar a secas lo dejaría ahí para
+    que la primera consulta del giro NUEVO lo levante y lo cancele de mentira.
+    Se lo lee para tirarlo."""
+    global _pared
+    _bombear()
+    _pared = None
 
 
 def reiniciar_frente():

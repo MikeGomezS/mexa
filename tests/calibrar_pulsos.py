@@ -6,12 +6,13 @@ acercamiento por cámara en main.py) para que midas en el piso:
   - AVANCE: cuántos cm avanza MEXA en un pulso de PULSO_AVANCE_S.
   - GIRO:   cuántos grados gira MEXA en un pulso de PULSO_GIRO_S.
 
-Con esos números ajustás las constantes en main.py:
-  TAMANO_CARA_OBJETIVO, PULSO_AVANCE_S, PULSO_GIRO_S.
+Con esos números ajustás:
+  PULSO_GIRO_S            -> modulos/modulo_motores.py (fuente única)
+  TAMANO_CARA_OBJETIVO    -> modulos/navegacion.py
 
 USO (MEXA en el PISO, espacio libre alrededor):
-  python3 tests/calibrar_pulsos.py avance          # usa PULSO_AVANCE_S de main.py
-  python3 tests/calibrar_pulsos.py giro            # usa PULSO_GIRO_S de main.py
+  python3 tests/calibrar_pulsos.py avance          # usa el PULSO_AVANCE_S de este archivo
+  python3 tests/calibrar_pulsos.py giro            # usa PULSO_GIRO_S de modulo_motores
   python3 tests/calibrar_pulsos.py avance 0.6      # override de duración (segundos)
   python3 tests/calibrar_pulsos.py giro 0.4
 
@@ -28,11 +29,14 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from modulos.modulo_motores import iniciar_motores, mover_por_tiempo, detener
+from modulos.modulo_motores import (iniciar_motores, mover_por_tiempo, detener,
+                                     PULSO_GIRO_S)
 
-# Valores actuales en main.py (referencia para el default).
+# PULSO_GIRO_S NO se copia acá: se importa del módulo de motores, que es su única
+# fuente de verdad. Copiarlo fue el bug que hacía medir 0.25s mientras el robot
+# giraba 0.80s — la calibración salía contra un pulso que ya nadie usaba.
+# El avance sí es propio del calibrador: el lazo real avanza CONTINUO, sin pulsos.
 PULSO_AVANCE_S = 0.4
-PULSO_GIRO_S = 0.25
 
 
 def main() -> None:

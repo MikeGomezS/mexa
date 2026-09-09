@@ -23,6 +23,10 @@ import time
 # generan un tramo que deshacer.
 _MOV_INVERSO = {"F": "B", "B": "F", "R": "L", "L": "R"}
 
+# Traslación y rotación se corrigen POR SEPARADO (ver escalar_segmentos).
+_TRASLACION = ("F", "B")
+_ROTACION   = ("R", "L")
+
 
 def calcular_camino_inverso(registro, duracion_min=0.05):
     """Convierte un registro de (comando, timestamp) en los tramos que
@@ -50,6 +54,36 @@ def calcular_camino_inverso(registro, duracion_min=0.05):
         segmentos.append((inverso, duracion))
     segmentos.reverse()
     return segmentos
+
+
+def escalar_segmentos(segmentos, factor_avance=1.0, factor_giro=1.0):
+    """Aplica la corrección de hardware a cada tramo, SEGÚN SU TIPO.
+
+    Por qué dos factores y no uno. La ida y la vuelta NO son simétricas en
+    TRASLACIÓN: inercia, patinaje y el motor rindiendo distinto en reversa
+    hacen que un 'B' de la misma duración que el 'F' no recorra lo mismo.
+    Eso es real y se corrige con `factor_avance`.
+
+    En ROTACIÓN no pasa. Mirá el firmware (arduino/mexa/mexa.ino:352-353):
+    'R' es ladoIzq(+1)+ladoDer(-1) y 'L' es ladoIzq(-1)+ladoDer(+1). En
+    CUALQUIER giro la mitad de los motores va para adelante y la otra mitad
+    para atrás, así que la asimetría adelante/reversa se CANCELA adentro del
+    giro. Invertir un giro es espejarlo, no revertirlo.
+
+    Por eso un factor único es un ERROR de modelo: calibrarlo para que cierre
+    el avance le mete ese mismo porcentaje de error angular a cada giro. Y el
+    error angular es el caro — no se suma al final, ROTA todos los tramos que
+    vienen después. `factor_giro` arranca en 1.0 y casi siempre se queda ahí.
+
+    Función PURA: no toca hardware, se prueba en tests/test_registro_camino.py.
+    """
+    escalados = []
+    for cmd, duracion in segmentos:
+        if cmd in _ROTACION:
+            escalados.append((cmd, duracion * factor_giro))
+        else:
+            escalados.append((cmd, duracion * factor_avance))
+    return escalados
 
 
 class RegistroCamino:
@@ -98,31 +132,51 @@ _DIRECCION = {"F": "adelante", "B": "atras", "R": "derecha", "L": "izquierda"}
 
 
 def retroceder(registro, duracion_min=0.05, pausa_entre_tramos=0.15,
-               factor_duracion=1.0):
+               factor_avance=1.0, factor_giro=1.0, factor_duracion=None):
     """Deshace el recorrido: ejecuta los tramos inversos, uno por uno, en
     orden inverso, para devolver a MEXA a su punto de partida.
 
     `registro` es la lista de (comando, timestamp) acumulada durante el
-    acercamiento. Devuelve los tramos ejecutados (útil para log/tests).
+    acercamiento. Devuelve los tramos EJECUTADOS, ya escalados (log/tests).
 
-    `factor_duracion` (calibración de hardware) escala TODAS las duraciones
-    del retroceso. El avance y la reversa NO son simétricos: inercia,
-    patinaje y el motor rindiendo distinto en reversa hacen que un 'B' de la
-    misma duración que el 'F' no recorra lo mismo. Si MEXA se queda CORTO al
-    volver, subí el factor (>1.0); si se PASA, bajalo (<1.0). 1.0 = sin
-    corrección. Se calibra en tests/calibrar_retroceso.py.
+    `factor_avance` y `factor_giro` son la calibración de hardware, y van
+    SEPARADOS a propósito: la reversa no rinde como el avance, pero un giro
+    invertido es el mismo giro espejado (ver escalar_segmentos). Si MEXA se
+    queda CORTA al volver, subí `factor_avance` (>1.0); si se PASA, bajalo.
+    Tocá `factor_giro` sólo si queda mal ORIENTADA con la distancia bien.
+    Se calibran en tests/calibrar_retroceso.py.
+
+    `factor_duracion` es el parámetro VIEJO, que escalaba avance y giro con
+    el mismo número. Se acepta por compatibilidad y aplica a los dos.
+
+    POR QUÉ TRAMO POR TRAMO Y NO DE UN TIRÓN. Tienta fusionar tramos
+    consecutivos del mismo comando (pasa siempre: la fase visual cierra con
+    'S' y el empuje final manda otro 'F'). Sería más rápido y es INCORRECTO:
+    dos pulsos de 1s pagan DOS rampas de aceleración y uno de 2s paga UNA,
+    así que el fusionado recorre MÁS. La réplica es exacta porque conserva la
+    estructura de arranques de la ida. Por lo mismo `pausa_entre_tramos` NO
+    es tiempo muerto: garantiza que cada tramo arranque DESDE EL REPOSO, como
+    en la ida. Bajarla compra velocidad pagando con exactitud.
     """
     from .modulo_motores import mover_por_tiempo, detener
+
+    if factor_duracion is not None:   # compatibilidad con la firma vieja
+        factor_avance = factor_giro = factor_duracion
 
     segmentos = calcular_camino_inverso(registro, duracion_min)
     if not segmentos:
         print("[CAMINO] Nada que deshacer: no se registró desplazamiento.")
         return segmentos
+    segmentos = escalar_segmentos(segmentos, factor_avance, factor_giro)
 
     print(f"[CAMINO] Retrocediendo {len(segmentos)} tramo(s) al punto de "
-          f"partida (factor={factor_duracion:.2f}).")
-    for cmd, duracion in segmentos:
-        mover_por_tiempo(_DIRECCION[cmd], duracion * factor_duracion)
-        time.sleep(pausa_entre_tramos)  # asienta entre tramos (anti-blur/inercia)
+          f"partida (avance={factor_avance:.2f}, giro={factor_giro:.2f}).")
+    ultimo = len(segmentos) - 1
+    for i, (cmd, duracion) in enumerate(segmentos):
+        mover_por_tiempo(_DIRECCION[cmd], duracion)
+        # La pausa sirve para que el tramo SIGUIENTE arranque desde el reposo.
+        # Después del último no hay siguiente: era 0.15s regalados, siempre.
+        if i != ultimo:
+            time.sleep(pausa_entre_tramos)
     detener()
     return segmentos

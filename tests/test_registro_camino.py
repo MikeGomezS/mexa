@@ -15,7 +15,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from modulos.registro_camino import calcular_camino_inverso
+from modulos.registro_camino import calcular_camino_inverso, escalar_segmentos
 
 
 def _aprox(segmentos, esperado, tol=1e-6):
@@ -74,6 +74,40 @@ def test_ultimo_comando_sin_sucesor_se_ignora():
     # medible y se ignora (no se inventa un tramo).
     reg = [("F", 0.0), ("S", 1.0), ("F", 1.0)]
     assert _aprox(calcular_camino_inverso(reg), [("B", 1.0)])
+
+
+# ── escalar_segmentos: la traslación y la rotación NO se corrigen igual ──
+# En CUALQUIER giro (R/L) la mitad de los motores va para adelante y la otra
+# mitad para atrás, así que la asimetría adelante/reversa se CANCELA dentro
+# del giro. Un solo factor para las dos cosas mete error angular — y el error
+# angular rota todos los tramos que siguen.
+
+def test_escalar_lista_vacia():
+    assert escalar_segmentos([], 1.2, 1.0) == []
+
+
+def test_escalar_sin_correccion_no_cambia_nada():
+    segs = [("B", 1.5), ("L", 0.25)]
+    assert _aprox(escalar_segmentos(segs, 1.0, 1.0), segs)
+
+
+def test_el_factor_de_avance_no_toca_los_giros():
+    # Se corrige el avance un 20% y el giro queda intacto: es el caso real
+    # de calibración (la reversa rinde distinto, el giro no).
+    segs = [("B", 2.0), ("L", 0.5), ("F", 1.0), ("R", 0.5)]
+    esperado = [("B", 2.4), ("L", 0.5), ("F", 1.2), ("R", 0.5)]
+    assert _aprox(escalar_segmentos(segs, 1.2, 1.0), esperado)
+
+
+def test_el_factor_de_giro_no_toca_los_avances():
+    segs = [("B", 2.0), ("L", 0.5), ("R", 0.25)]
+    esperado = [("B", 2.0), ("L", 0.45), ("R", 0.225)]
+    assert _aprox(escalar_segmentos(segs, 1.0, 0.9), esperado)
+
+
+def test_ambos_factores_a_la_vez():
+    segs = [("B", 2.0), ("L", 0.5)]
+    assert _aprox(escalar_segmentos(segs, 1.1, 0.8), [("B", 2.2), ("L", 0.4)])
 
 
 def main():

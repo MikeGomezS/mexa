@@ -15,10 +15,12 @@
 
 import time
 
-from .modulo_motores import detener, mover_por_tiempo, mover_adelante
+from .modulo_motores import (detener, mover_por_tiempo, mover_adelante,
+                             iniciar_movimiento,
+                             PULSO_GIRO_S)  # re-export: es del tren de tracción
 from .modulo_camara  import localizar_cara, reiniciar_objetivo
 from .conexion_arduino import (distancia_frontal_cm, freno_por_persona,
-                               reiniciar_frente)
+                               reiniciar_frente, pared_al_girar, reiniciar_pared)
 from .registro_camino import RegistroCamino, retroceder  # re-export: retroceder
 
 # ── Acercamiento con cámara (drive-and-sense en dos fases) ────
@@ -43,9 +45,6 @@ TAMANO_CARA_OBJETIVO    = 0.40  # techo de seguridad: si la cara llegara a verse
                                 # de grande, frena. Casi nunca se alcanza (la cara se
                                 # recorta antes ~25%); el freno real es la pérdida por
                                 # recorte + el empuje final de la fase 2.
-PULSO_GIRO_S            = 0.80  # barrido por paso: más alto = gira menos entrecortado, pero
-                                # si se pasa del centro oscila (zona 40/60% lo auto-corrige).
-                                # Subido 0.25->0.80 para que el giro se sienta más fluido.
 MAX_MISSES_ACERCAMIENTO = 6     # frames sin cara seguidos -> fin de la fase visual
 SETTLE_ACERCAMIENTO_S   = 0.35  # respiro anti-blur SÓLO tras un giro: deja asentar
                                 # robot+cámara antes de re-sensar. SIN esto, el frame
@@ -81,6 +80,41 @@ AVANCE_CIEGO_FINAL_S    = 4.0   # empuje A CIEGAS: sólo se usa si los ultrasón
                                 # frontales NO contestan (no conectados / fallados).
                                 # ~2.5 cm/s -> 4s ≈ 10cm. SEGURIDAD: no lo subas tanto
                                 # que MEXA choque con el visitante.
+
+
+def _girar_vigilado(posicion):
+    """Gira un pulso hacia `posicion`, pero VIGILANDO que el firmware no haya
+    cortado el giro por pared lateral.
+
+    POR QUÉ NO ALCANZA UN sleep(PULSO_GIRO_S). El firmware frena SOLO: durante
+    un 'R'/'L' mide el lateral de ese lado y si hay pared a menos de
+    UMBRAL_PARED_CM cancela el giro (arduino/mexa/mexa.ino:219-232, avisa con
+    "WALL:I/D"). Un sleep ciego no se entera: sigue durmiendo el pulso entero y
+    recién ahí manda su 'S', así que EL REGISTRO DEL CAMINO ANOTA UN GIRO QUE
+    NO PASÓ. Al volver, MEXA gira de más — y el error angular no se suma al
+    final, ROTA todos los tramos siguientes.
+
+    Es el mismo trato que ya se le daba al freno frontal durante el avance
+    (ver el lazo de acercarse_a_usuario y POLL_FRENTE_S): consultar seguido y
+    mandar el 'S' propio, para que el registro cuente lo que el robot hizo.
+
+    Devuelve el lado ('I'/'D') si hubo corte por pared, o None si el pulso se
+    completó entero.
+    """
+    reiniciar_pared()      # espejo del reiniciarFrente() del avance
+    inicio = time.monotonic()
+    iniciar_movimiento(posicion)
+    try:
+        while time.monotonic() - inicio < PULSO_GIRO_S:
+            lado = pared_al_girar()
+            if lado is not None:
+                print(f"[NAV] Giro CANCELADO por pared ({lado}) a los "
+                      f"{time.monotonic() - inicio:.2f}s de {PULSO_GIRO_S:.2f}s.")
+                return lado
+            time.sleep(POLL_FRENTE_S)
+    finally:
+        detener()          # el 'S' que hace que el registro diga la verdad
+    return None
 
 
 def _empuje_final():
@@ -246,7 +280,7 @@ def acercarse_a_usuario():
             # Corrección de rumbo: frenar, girar un pulso y asentar (anti-blur)
             # antes de re-sensar, que un frame post-giro sale borroso.
             frenar()
-            mover_por_tiempo(posicion, PULSO_GIRO_S)
+            _girar_vigilado(posicion)
             time.sleep(SETTLE_ACERCAMIENTO_S)
     else:
         frenar()
