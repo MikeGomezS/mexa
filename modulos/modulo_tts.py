@@ -201,8 +201,18 @@ def _abrir_reproductor(sample_rate: int) -> subprocess.Popen:
         stderr=subprocess.DEVNULL)
 
 
-def hablar_stream(oraciones) -> None:
+def hablar_stream(oraciones, al_hablar=None) -> None:
     """Reproduce un iterable de oraciones como UN SOLO chorro de audio.
+
+    `al_hablar` se invoca UNA vez, en el instante en que hay audio listo y
+    MEXA está por sonar — no cuando se la llama. La diferencia es todo el
+    punto: consumir `oraciones` arranca el LLM, y en esta Pi el prompt tarda
+    entre 5 y 25 s en procesarse. Quien llama no puede saber cuándo termina
+    esa espera; esta función sí, porque es la que recibe el primer WAV.
+
+    Sirve para que el llamador ponga cara de pensar mientras se espera y cara
+    de hablar cuando se habla. NO se decide acá qué cara es: la política de
+    expresiones vive en `dialogo`, y este módulo sólo avisa el evento.
 
     Tres cosas pasan a la vez:
       1. un hilo SINTETIZA la oración N+1 mientras se escucha la N,
@@ -281,11 +291,27 @@ def hablar_stream(oraciones) -> None:
         proc = escritor = None
 
     try:
+        primero = True
         while True:
             item = wav_queue.get()
             if item is _CENTINELA:
                 break
             pcm_data, sample_rate = item
+
+            if primero:
+                # ACÁ, y no antes: `wav_queue.get()` recién devuelve algo
+                # cuando la primera oración está sintetizada, o sea cuando el
+                # LLM terminó de pensar. Es el único instante honesto para
+                # decir "ya está hablando".
+                #
+                # Un fallo del callback NO puede callar a MEXA: la cara es
+                # decoración, el audio es el servicio. Por eso va envuelto.
+                primero = False
+                if al_hablar is not None:
+                    try:
+                        al_hablar()
+                    except Exception as e:
+                        print(f"[TTS] al_hablar falló (sigo hablando): {e}")
 
             if sample_rate != rate_actual:
                 _cerrar()                      # frecuencia distinta: stream nuevo

@@ -282,19 +282,24 @@ def _ciclo_preguntas(f: dict, idioma: str) -> Resultado:
             hablar(f["fuera_de_tema"].format(oferta=oferta))
             continue
 
-        # "pensando" ALCANZA A NO VERSE, y queda igual a propósito.
-        # `hablar_stream` consume el generador, así que los 5-25 s de
-        # procesamiento de prompt pasan DENTRO de la línea de abajo — para
-        # entonces la cara ya dice "hablando". La expresión correcta para esa
-        # espera es "pensando", pero no se puede dejar puesta: tiene
-        # boca_vol=0 y MEXA hablaría con la boca congelada (lo mismo que
-        # encontró test_expresiones en el saludo).
-        # Arreglarlo de verdad es que `hablar_stream` avise cuando llega el
-        # primer trozo. Hasta entonces esto queda como marcador de intención,
-        # no como algo que el visitante vea.
+        # PIENSA MIENTRAS PIENSA, HABLA CUANDO HABLA.
+        # Antes acá había dos `cambiar_expresion` pegados y "pensando" no se
+        # veía nunca: `hablar_stream` consume el generador, así que los 5-25 s
+        # de procesamiento de prompt pasaban con la cara ya puesta en
+        # "hablando" — boca lista, cero audio. El visitante veía a MEXA
+        # "hablando" en silencio justo en la espera más larga de la charla.
+        #
+        # No se podía arreglar dejando "pensando" puesta: tiene boca_vol=0, y
+        # entonces MEXA hablaba con la boca congelada (el mismo error que
+        # test_expresiones encontró en el saludo).
+        #
+        # Lo resuelve `al_hablar`: `hablar_stream` lo invoca en el instante en
+        # que tiene el primer WAV listo, que es el único momento honesto para
+        # decir "ya está hablando". La política de qué cara va sigue acá; el
+        # TTS sólo avisa el evento.
         cambiar_expresion("pensando")
-        cambiar_expresion("hablando")
-        hablar_stream(generar_respuesta_stream(pregunta))
+        hablar_stream(generar_respuesta_stream(pregunta),
+                      al_hablar=lambda: cambiar_expresion("hablando"))
 
 
 def ciclo_interaccion() -> Resultado:

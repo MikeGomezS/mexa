@@ -15,6 +15,25 @@
 #    3. Informa qué poses quedaron sin cablear (no es error: hay
 #       expresiones a propósito fuera del flujo).
 #
+#  HAY DOS FORMAS DE CAMBIAR DE CARA, y las dos se analizan:
+#
+#    a) como SENTENCIA suelta antes de hablar:
+#           cambiar_expresion("feliz")
+#           hablar(frase)
+#
+#    b) como CALLBACK dentro de la llamada que habla:
+#           hablar_stream(gen, al_hablar=lambda: cambiar_expresion("hablando"))
+#
+#       La (b) existe porque consumir `gen` arranca el LLM y el prompt tarda
+#       5-25 s en esta Pi: la cara tiene que cambiar cuando hay audio, no
+#       cuando se llama. Una expresión puesta desde ahí está en pantalla
+#       JUSTO cuando empieza a salir audio, así que cuenta como "habla" por
+#       definición.
+#
+#       Sin analizar la (b) este test se vuelve CIEGO en silencio: pasa en
+#       verde e informa la expresión como "sin cablear", que es el peor
+#       resultado posible — parece que no hace falta revisarla.
+#
 #  Lee los archivos con `ast`, sin importarlos: importar
 #  `_cara_animada` abre una ventana de pygame, y esto tiene que
 #  poder correr por SSH sin proyector.
@@ -139,11 +158,37 @@ def _usos(ruta: str) -> list[tuple[str, int, bool]]:
             for nombre in _textos(llamada):
                 encontrados.append((nombre, sentencia.lineno, habla))
 
-    for nodo in ast.walk(_arbol(ruta)):
+    def _nombre_de(llamada: ast.Call) -> str | None:
+        f = llamada.func
+        return getattr(f, "id", None) or getattr(f, "attr", None)
+
+    arbol = _arbol(ruta)
+
+    # PASADA 1 — cambios como SENTENCIA (forma a).
+    for nodo in ast.walk(arbol):
         for campo in ("body", "orelse", "finalbody"):
             cuerpo = getattr(nodo, campo, None)
             if isinstance(cuerpo, list) and cuerpo and isinstance(cuerpo[0], ast.stmt):
                 revisar_bloque(cuerpo)
+
+    # PASADA 2 — cambios pasados COMO ARGUMENTO a la llamada que habla
+    # (forma b, el callback `al_hablar`). `revisar_bloque` no los ve nunca:
+    # `es_cambio` exige que el cambio sea una sentencia, y acá es un
+    # argumento dentro de un lambda.
+    #
+    # Estos van con habla=True SIN mirar qué hay alrededor, y no es un atajo:
+    # una expresión que se pone desde dentro de hablar()/hablar_stream() está
+    # en pantalla por construcción mientras sale el audio. No hay ventana que
+    # calcular.
+    for nodo in ast.walk(arbol):
+        if not isinstance(nodo, ast.Call) or _nombre_de(nodo) not in HABLAN:
+            continue
+        for arg in list(nodo.args) + [kw.value for kw in nodo.keywords]:
+            for sub in ast.walk(arg):
+                if isinstance(sub, ast.Call) and _nombre_de(sub) in CAMBIAN:
+                    for nombre in _textos(sub):
+                        encontrados.append((nombre, sub.lineno, True))
+
     return encontrados
 
 
