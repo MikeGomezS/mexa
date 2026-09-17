@@ -73,6 +73,30 @@ NOMBRES_EN = {
     "los Mixtecas":   "the Mixtecs",
 }
 
+# El puente entre el catálogo de videos y la base de conocimiento. Las dos
+# listas hablan de las mismas siete civilizaciones pero con claves distintas:
+# acá el nombre que MEXA PRONUNCIA ("los Mayas"), allá el tema que indexa los
+# hechos ("mayas").
+#
+# Sirve para SEMBRAR el tema en cuanto el visitante elige: terminado el video
+# de los Mayas, su primera pregunta ya cae en los hechos mayas aunque no
+# nombre la civilización ("¿y cómo escribían?"). Sin esto, ese dato —que
+# `dialogo.ciclo_interaccion` ya tenía en la mano— se perdía.
+#
+# Las claves son las de NOMBRES_DISPONIBLES y los valores los de
+# `conocimiento.CIVILIZACIONES_VALIDAS`. Si se suma una civilización hay que
+# tocar las tres listas; `tests/test_fuera_de_tema.py` verifica que no se
+# desincronicen.
+TEMAS_CONOCIMIENTO = {
+    "los Mayas":      "mayas",
+    "los Aztecas":    "aztecas",
+    "Teotihuacán":    "teotihuacan",
+    "los Olmecas":    "olmecas",
+    "los Toltecas":   "toltecas",
+    "los Zapotecas":  "zapotecas",
+    "los Mixtecas":   "mixtecas",
+}
+
 # Lo que NO se ofrece en inglés, y por qué. Medido en test_civilizaciones.py
 # (4 condiciones de ruido): en inglés dan 0/4, ni una sola vez.
 #   'olmec' y 'toltec' NO EXISTEN en el léxico en-us de Vosk, así que el oído
@@ -147,6 +171,16 @@ FRASES = {
         "intro_video":  "Perfecto, te voy a mostrar un video sobre {nombre}.",
         "post_video":   "Espero que hayas disfrutado el video sobre {nombre}. ¿Tienes alguna pregunta?",
         "despedida":    "Fue un placer compartir cultura contigo. ¡Hasta pronto!",
+        # Redirige sin regañar y VUELVE A OFRECER: el visitante que pregunta
+        # fuera de tema casi nunca está jodiendo, es que no sabe qué puede
+        # preguntar. Enumerar las civilizaciones convierte el rechazo en una
+        # invitación, que es la diferencia entre una pared y un guía.
+        "fuera_de_tema": "Solo puedo hablar de las civilizaciones de México. Tenemos: {oferta}. ¿Qué te gustaría saber?",
+        # "¿Cómo te llamas?" es la pregunta más humana que le hacen, y es la
+        # ÚNICA fuera de tema con respuesta fija. NO lleva {oferta}: cuando
+        # esto se dispara el visitante ya eligió civilización y vio el video,
+        # así que enumerarle las siete otra vez es ruido en el TTS.
+        "identidad":     "Me llamo MEXA y soy un robot guía. Estoy aquí para contarte sobre las civilizaciones de México. ¿Qué te gustaría saber?",
     },
     "en": {
         "saludo_civ":   "Hello! I am MEXA, your guide to the history and culture of Mexico. Which civilization would you like to learn about today?",
@@ -155,6 +189,8 @@ FRASES = {
         "intro_video":  "Perfect, I will show you a video about {nombre}.",
         "post_video":   "I hope you enjoyed the video about {nombre}. Do you have any questions?",
         "despedida":    "It was a pleasure sharing culture with you. See you soon!",
+        "fuera_de_tema": "I can only talk about the civilizations of Mexico. We have: {oferta}. What would you like to know?",
+        "identidad":     "My name is MEXA and I am a robot guide. I am here to tell you about the civilizations of Mexico. What would you like to know?",
     },
 }
 

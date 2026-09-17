@@ -401,6 +401,213 @@ def _resumir(hechos: str) -> str:
     return ". ".join(oraciones[:_MAX_ORACIONES]) + "."
 
 
+# ── Las civilizaciones que MEXA SÍ puede explicar ────────────
+# Los siete temas que tienen video propio y nombre reconocible por voz
+# (`contenido.NOMBRES_DISPONIBLES`). Los otros tres temas de `_BASE`
+# — independencia, revolucion, mexico_general — se quedan acá porque los
+# hechos son buenos y están verificados, pero NO son civilizaciones: MEXA
+# nunca los ofrece y ahora tampoco los contesta. El día que se les haga un
+# video, alcanza con sumarlos a este set.
+#
+# ESTE SET ES LA FRONTERA DE LO QUE MEXA SABE. No es una sugerencia al
+# modelo: es la condición que se chequea en código antes de llamarlo.
+CIVILIZACIONES_VALIDAS = {
+    "teotihuacan", "aztecas", "mayas",
+    "olmecas", "toltecas", "zapotecas", "mixtecas",
+}
+
+# Palabras clave de esas siete, compiladas UNA vez al importar. Mismo motivo
+# que en `contenido._PATRONES`: esto corre en cada pregunta del visitante, y
+# recompilar ~150 patrones por frase es tirar CPU de la Raspberry.
+_PATRONES_CIV: dict[str, list[re.Pattern]] = {
+    entrada["tema"]: [re.compile(rf"\b{re.escape(clave.lower())}\b")
+                      for clave in entrada["palabras_clave"]]
+    for entrada in _BASE if entrada["tema"] in CIVILIZACIONES_VALIDAS
+}
+
+# ── Dominios ajenos ─────────────────────────────────────────
+# Palabras que delatan que la pregunta NO es sobre las civilizaciones, para
+# cuando la pregunta no nombra ninguna y habría que heredar el tema anterior.
+#
+# ES UNA LISTA NEGRA, o sea INCOMPLETA POR DEFINICIÓN: siempre va a existir
+# una pregunta fuera de tema que no está acá. Se eligió igual porque la
+# alternativa —rechazar todo lo que no nombre una civilización— mata los
+# seguimientos, que son la mitad de la conversación ("¿y quién la
+# construyó?"). Ante la duda, NO rechazar: contestar de más es barato,
+# abandonar a alguien que estaba preguntando en serio es caro. Es la misma
+# asimetría que documenta `dialogo._es_respuesta`.
+#
+# CADA PALABRA ACÁ TIENE QUE SER IMPOSIBLE EN UNA PREGUNTA LEGÍTIMA. Las que
+# NO están, y por qué, importan más que las que están:
+#   - "mundial"  → "¿es Patrimonio Mundial?" (está en los hechos de Teotihuacán)
+#   - "lluvia"   → Tláloc es el dios de la lluvia
+#   - "sol", "luna" → Pirámide del Sol, Pirámide de la Luna
+#   - "pelota"   → el juego de pelota maya
+#   - "moneda", "dinero" → el cacao era moneda de cambio
+#   - "egipto", "pirámides egipcias" → comparar con Egipto es LA pregunta
+#     más común en un museo mesoamericano, y los hechos de Teotihuacán ya
+#     dicen "tercera pirámide más grande del mundo"
+#   - "presidente" suelta → "¿tenían presidente los mayas?" es legítima
+#     (la respuesta es el tlatoani); sólo se filtra "presidente actual"
+#   - países sueltos (china, japón, india) → las preguntas comparativas son
+#     legítimas y el riesgo de falso rechazo no lo compensa
+_DOMINIOS_AJENOS = {
+    # — deportes —
+    "fútbol", "futbol", "soccer", "football", "basketball", "basquetbol",
+    "básquetbol", "béisbol", "beisbol", "nba", "copa del mundo", "world cup",
+    "messi", "maradona", "olimpiadas", "olympics",
+    # — clima y hora del día —
+    "clima", "weather", "temperatura", "temperature", "pronóstico", "forecast",
+    "qué hora es", "que hora es", "what time is it",
+    # — tecnología moderna —
+    "celular", "teléfono", "telefono", "cell phone", "smartphone", "iphone",
+    "android", "internet", "wifi", "computadora", "computer", "laptop",
+    "tablet", "videojuego", "videojuegos", "video game", "video games",
+    "playstation", "xbox", "nintendo", "pokémon", "pokemon", "minecraft",
+    "roblox", "fortnite", "tiktok", "instagram", "youtube", "facebook",
+    "whatsapp", "netflix", "inteligencia artificial", "chatgpt",
+    # — política y actualidad —
+    "elecciones", "elections", "presidente actual", "current president",
+    "presidente de méxico", "gobierno actual", "partido político",
+    "impuestos", "taxes",
+    # — logística del museo (no es historia) —
+    "cuánto cuesta", "cuanto cuesta", "how much does it cost", "boleto",
+    "boletos", "ticket", "tickets", "baño", "bathroom", "restroom",
+    "estacionamiento", "parking",
+    # — comida moderna (cacao, chocolate y maíz NO están: son legítimos) —
+    "pizza", "hamburguesa", "hamburger", "sushi", "coca cola", "mcdonalds",
+    # — la charla en sí (las preguntas de IDENTIDAD entran por unión, abajo) —
+    "cuántos años tienes", "cuantos años tienes", "how old are you",
+    "chiste", "joke", "canta una canción", "sing a song",
+    # — tarea escolar —
+    "ecuación", "equation", "raíz cuadrada", "square root", "multiplica",
+    "resuelve", "solve",
+}
+
+# ── "¿Cómo te llamas?" ──────────────────────────────────────
+# Preguntas sobre MEXA misma. No son sobre las civilizaciones, así que
+# tampoco las contesta el modelo — pero rechazarlas con "solo puedo hablar de
+# las civilizaciones" es la peor respuesta posible: es la pregunta más humana
+# que le van a hacer, y contestarla con una pared hace que el robot se lea
+# como un formulario. Van con RESPUESTA FIJA (`contenido.FRASES[*]["identidad"]`),
+# que además redirige a lo que sí sabe.
+#
+# QUÉ NO ENTRA ACÁ, a propósito: la edad, los chistes y las canciones siguen
+# en la lista negra de arriba. "¿Cómo te llamas?" tiene una respuesta correcta
+# y corta; "¿cuántos años tienes?" y "cantá algo" no, y contestarlas abriría
+# una charla que MEXA no puede sostener.
+#
+# OJO con las claves en segunda persona: son las que las hacen seguras.
+# "eres", "te" y "you" sólo pueden referirse a MEXA, así que "¿de qué eran
+# las pirámides?" no matchea "qué eres", y el límite de palabra protege
+# "who are you" de "who are your gods" (\byou\b no entra en "your").
+_IDENTIDAD = {
+    "cómo te llamas", "como te llamas", "cuál es tu nombre", "cual es tu nombre",
+    "quién eres", "quien eres", "qué eres", "que eres",
+    "eres un robot", "eres una robot", "quién te hizo", "quien te hizo",
+    "cómo te hicieron", "como te hicieron", "quién te construyó", "quien te construyo",
+    "what is your name", "whats your name", "what's your name",
+    "who are you", "what are you", "are you a robot",
+    "who made you", "who built you",
+}
+
+# La lista negra INCLUYE a la de identidad. Así hay una sola fuente de verdad:
+# si `dialogo` no interceptara la pregunta de identidad —por un bug, o porque
+# alguien llama a la IA directo—, el filtro la rechaza igual en vez de dejar
+# que llama3.2:1b improvise quién es MEXA. Dos listas con las mismas palabras
+# escritas aparte es una regla que tarde o temprano se contradice a sí misma.
+_DOMINIOS_AJENOS |= _IDENTIDAD
+
+_PATRONES_AJENOS = [re.compile(rf"\b{re.escape(p)}\b") for p in _DOMINIOS_AJENOS]
+_PATRONES_IDENTIDAD = [re.compile(rf"\b{re.escape(p)}\b") for p in _IDENTIDAD]
+
+
+def es_pregunta_de_identidad(pregunta: str) -> bool:
+    """¿Está preguntando quién es MEXA, y no por una civilización?
+
+    La consulta `dialogo` ANTES del filtro de tema, porque la identidad no es
+    un tema del que haya hechos que buscar: es una respuesta fija.
+    """
+    return bool(pregunta) and any(patron.search(pregunta.lower())
+                                  for patron in _PATRONES_IDENTIDAD)
+
+
+def _dominio_ajeno(texto: str) -> bool:
+    """¿La frase delata un tema que MEXA no tiene por qué contestar?"""
+    return any(patron.search(texto) for patron in _PATRONES_AJENOS)
+
+
+def resolver_tema(pregunta: str, tema_previo: str | None = None) -> str | None:
+    """De qué civilización habla la pregunta. None = hay que rechazarla.
+
+    Devuelve un tema de `CIVILIZACIONES_VALIDAS`, o None si la pregunta no
+    es sobre ninguna. Es la ÚNICA fuente de verdad de esa decisión: la usan
+    `modulo_ia` para elegir los hechos y `dialogo` para decidir si contesta.
+
+    EL ORDEN DE LOS DOS PASOS ES EL DISEÑO, no un detalle:
+
+      1. Si la pregunta NOMBRA una civilización, manda la pregunta y no la
+         inercia. Así el visitante cambia de tema cuando quiere, y la lista
+         negra NO se aplica: "¿los mayas jugaban pelota?" y "¿es Patrimonio
+         Mundial?" tienen que pasar aunque toquen palabras de otro dominio.
+      2. Si NO nombra ninguna, hereda la que se venía hablando. Esto es lo
+         que hace que "¿y quién la construyó?" signifique algo — sin esto la
+         pregunta llega al modelo sin un solo hecho. Recién acá se aplica la
+         lista negra, porque acá la herencia es una APUESTA y conviene poder
+         cancelarla.
+
+    Si hay varias civilizaciones nombradas gana la que aparece PRIMERO en el
+    texto: es la que el visitante puso como sujeto. "¿Los mayas conocían a
+    los aztecas?" es una pregunta sobre los MAYAS.
+
+    ES IDEMPOTENTE a propósito: llamarla dos veces con el mismo estado da el
+    mismo tema, así que `dialogo` puede consultarla para decidir y
+    `modulo_ia` volver a consultarla para generar, sin desincronizarse.
+    """
+    if not pregunta:
+        return None
+    texto = pregunta.lower()
+
+    # 1. ¿Nombra alguna? La primera que aparezca en el texto.
+    posiciones: dict[str, int] = {}
+    for tema, patrones in _PATRONES_CIV.items():
+        inicios = [m.start() for m in
+                   (patron.search(texto) for patron in patrones) if m]
+        if inicios:
+            posiciones[tema] = min(inicios)
+    if posiciones:
+        return min(posiciones, key=lambda tema: posiciones[tema])
+
+    # 2. No nombra ninguna: hereda, salvo que se vaya claramente de tema.
+    if tema_previo is None or tema_previo not in CIVILIZACIONES_VALIDAS:
+        return None
+    if _dominio_ajeno(texto):
+        return None
+    return tema_previo
+
+
+def contexto_de(tema: str | None) -> str:
+    """Los hechos verificados de UN tema, listos para inyectar en el prompt.
+
+    Complementa a `buscar_contexto`: esa busca por palabras en la pregunta,
+    ésta recibe el tema ya resuelto por `resolver_tema` — que es lo que
+    permite que un seguimiento sin palabras clave igual viaje con hechos.
+
+    SÓLO SIRVE CIVILIZACIONES, aunque `_BASE` tenga más temas. Hoy es
+    redundante —`resolver_tema` nunca devuelve otra cosa— y es a propósito:
+    la frontera de lo que MEXA contesta es el requisito, no un detalle de
+    implementación, y un requisito que se chequea en un solo lugar se rompe
+    el día que alguien agrega un segundo llamador. Devolver hechos de
+    `independencia` acá alcanzaría para saltear el filtro entero.
+    """
+    if not tema or tema not in CIVILIZACIONES_VALIDAS:
+        return ""
+    for entrada in _BASE:
+        if entrada["tema"] == tema:
+            return "Hechos verificados:\n- " + _resumir(entrada["hechos"])
+    return ""
+
+
 def buscar_contexto(pregunta: str) -> str:
     """
     Busca en la base de conocimiento hechos relevantes para la pregunta.

@@ -14,11 +14,12 @@ from enum import Enum, auto
 from .modulo_audio     import (escuchar_pregunta, escuchar_idioma,
                                escuchar_multilingue)
 from .modulo_ia        import (generar_respuesta_stream, limpiar_historial,
-                               establecer_idioma)
+                               establecer_idioma, establecer_tema, tema_para)
 from .modulo_tts       import hablar, hablar_stream
 from .modulo_motores   import orientarse_a_usuario
 from .modulo_camara    import posicion_cara, reiniciar_objetivo
 from .modulo_proyector import mostrar_segun_tema, cambiar_expresion, reproducir_video
+from .conocimiento     import es_pregunta_de_identidad
 from . import contenido
 
 
@@ -212,6 +213,10 @@ def _ciclo_preguntas(f: dict, idioma: str) -> Resultado:
     """
     tiempo_ultimo = time.time()
     intentos_sin_respuesta = 0
+    # Se recalcula acá en vez de recibirla por parámetro: la regla de qué se
+    # ofrece en cada idioma vive en `contenido.nombres_ofrecidos` y una sola
+    # vez, que es el motivo por el que esa función existe.
+    oferta = ", ".join(contenido.nombres_ofrecidos(idioma))
 
     while True:
         if time.time() - tiempo_ultimo > TIEMPO_ESPERA_USUARIO:
@@ -243,6 +248,39 @@ def _ciclo_preguntas(f: dict, idioma: str) -> Resultado:
         if _es_respuesta(pregunta, _PALABRAS_SALIDA):
             _despedirse(f, contenta=True)       # se despidió él: buena onda
             return Resultado.ESPERAR
+
+        # ── "¿CÓMO TE LLAMAS?" ───────────────────────────────
+        # La única pregunta fuera de tema con respuesta propia. Va ANTES del
+        # filtro de tema porque la identidad no es un tema del que buscar
+        # hechos: no hay nada que resolver ni que pasarle al modelo.
+        #
+        # Y va DESPUÉS de las palabras de control, que siguen mandando: si el
+        # visitante dice "adiós", MEXA se despide, no se presenta.
+        #
+        # Se contesta CONTENTA, no confundida. Es la diferencia entre "me
+        # llamo MEXA" y "no entendí": la primera es un robot, la segunda es
+        # un formulario.
+        if es_pregunta_de_identidad(pregunta):
+            cambiar_expresion("feliz")
+            hablar(f["identidad"])
+            continue
+
+        # ── FILTRO DE TEMA ───────────────────────────────────
+        # MEXA sólo habla de las siete civilizaciones. El filtro va ACÁ, antes
+        # de todo lo caro: una pregunta fuera de tema no llama al LLM (5-25 s
+        # de procesamiento de prompt en esta Pi), no mueve la imagen del
+        # proyector y no gasta un turno de historial.
+        #
+        # `tema_para` también resuelve los SEGUIMIENTOS: "¿y quién la
+        # construyó?" no nombra civilización, así que hereda la que se venía
+        # hablando —sembrada más arriba con la que el visitante eligió—. Por
+        # eso el filtro NO puede ser "¿la pregunta nombra una civilización?":
+        # eso mataría la mitad de la conversación.
+        tema = tema_para(pregunta)
+        if tema is None:
+            cambiar_expresion("confundido")
+            hablar(f["fuera_de_tema"].format(oferta=oferta))
+            continue
 
         cambiar_expresion("pensando")
         mostrar_segun_tema(pregunta)
@@ -311,6 +349,14 @@ def ciclo_interaccion() -> Resultado:
 
     ruta_video, nombre_civ_es = video_info
     nombre_civ = contenido.NOMBRES_EN[nombre_civ_es] if idioma == "en" else nombre_civ_es
+
+    # SEMBRAR EL TEMA. El visitante ya eligió, así que a partir de acá toda
+    # pregunta suelta se interpreta sobre ESTA civilización. Es lo que hace
+    # que la primera pregunta después del video —casi siempre un seguimiento
+    # sin nombre propio— llegue al modelo con hechos verificados en vez de
+    # vacía. Va antes del video a propósito: es el único punto donde la
+    # elección es un hecho y todavía no hubo ninguna pregunta.
+    establecer_tema(contenido.TEMAS_CONOCIMIENTO[nombre_civ_es])
 
     # MEXA entendió qué eligió el visitante. Un guiño de complicidad antes de
     # entusiasmarse: necesita durar para leerse — abajo de medio segundo se lo
