@@ -16,8 +16,11 @@ mexa/
 ├── requirements.txt
 ├── README.txt
 └── media/
-    └── imagenes/
-        (agregar aquí imágenes JPG de sitios culturales)
+    ├── videos/
+    │   ├── español/   (Mayas_esp.mp4, Aztecas_esp.mp4, ...)
+    │   └── ingles/    (Mayas_eng.mp4, Aztecas_eng.mp4, ...)
+    └── vad/
+        silero_vad.onnx
 ```
 
 ## Paso 1 — Actualizar la Raspberry Pi
@@ -52,19 +55,25 @@ curl -L -o media/vad/silero_vad.onnx \
 ```
 Son 2.3 MB y corre en CPU (0.26 ms por ventana de 32 ms en la Pi 5).
 
-## Paso 6 — Crear carpeta de imágenes
+## Paso 6 — Colocar los videos de las civilizaciones
 ```
-mkdir -p media/imagenes
+mkdir -p media/videos/español media/videos/ingles
 ```
-Agregar imágenes JPG con estos nombres exactos:
-- bienvenida.jpg
-- teotihuacan.jpg
-- azteca.jpg
-- maya.jpg
-- independencia.jpg
-- revolucion.jpg
-- olmeca.jpg
-- mexico_general.jpg
+Un video por civilización y por idioma, con estos nombres exactos:
+```
+media/videos/español/{Nombre}_esp.mp4
+media/videos/ingles/{Nombre}_eng.mp4
+```
+Nombres: Mayas, Aztecas, Teotihuacan, Olmecas, Toltecas, Zapotecas, Mixtecas.
+
+La lista que MEXA realmente ofrece vive en `modulos/contenido.py`
+(`CIVILIZACIONES` y `NOMBRES_DISPONIBLES`); un video en disco que no esté ahí
+no se ofrece nunca. Antes de sumar una civilización, verificá que Vosk pueda
+oír su nombre con `python3 tests/calibrar_vocabulario.py auditar`.
+
+MEXA no usa imágenes fijas. Mientras habla, el proyector muestra su cara
+animada (`modulos/_cara_animada.py`); ver el comentario en
+`modulos/modulo_proyector.py` sobre por qué se quitaron.
 
 ## Paso 7 — Ejecutar MEXA
 ```

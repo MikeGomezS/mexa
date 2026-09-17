@@ -33,29 +33,7 @@ import time
 
 import pygame
 
-CARPETA_IMAGENES = os.path.join(os.path.dirname(__file__), "..", "media", "imagenes")
 CARPETA_VIDEOS   = os.path.join(os.path.dirname(__file__), "..", "media", "videos")
-
-# Diccionario de palabras clave → archivo de imagen
-IMAGENES_POR_TEMA = {
-    "teotihuacan":    "teotihuacan.jpg",
-    "piramide":       "teotihuacan.jpg",
-    "azteca":         "azteca.jpg",
-    "mexica":         "azteca.jpg",
-    "templo mayor":   "azteca.jpg",
-    "maya":           "maya.jpg",
-    "chichen itza":   "maya.jpg",
-    "aztec":          "azteca.jpg",   # forma inglesa: "Aztec(s)"
-    "pyramid":        "teotihuacan.jpg",
-    "independencia":  "independencia.jpg",
-    "hidalgo":        "independencia.jpg",
-    "morelos":        "independencia.jpg",
-    "revolucion":     "revolucion.jpg",
-    "zapata":         "revolucion.jpg",
-    "villa":          "revolucion.jpg",
-    "olmeca":         "olmeca.jpg",
-    "cabeza colosal": "olmeca.jpg",
-}
 
 pantalla = None
 
@@ -202,28 +180,6 @@ def enviar_volumen(v: float) -> None:
             pass
 
 
-def mostrar_imagen(nombre_archivo: str):
-    """Muestra una imagen en pantalla completa en el proyector."""
-    _desactivar_cara()
-
-    if pantalla is None:
-        iniciar_proyector()
-
-    ruta = os.path.join(CARPETA_IMAGENES, nombre_archivo)
-    if not os.path.exists(ruta):
-        print(f"[PROYECTOR] Imagen no encontrada: {ruta}")
-        mostrar_texto("📷 Imagen no disponible")
-        return
-
-    try:
-        img = pygame.image.load(ruta)
-        img = pygame.transform.scale(img, pantalla.get_size())
-        pantalla.blit(img, (0, 0))
-        pygame.display.flip()
-        print(f"[PROYECTOR] Mostrando: {nombre_archivo}")
-    except Exception as e:
-        print(f"[PROYECTOR] Error al mostrar imagen: {e}")
-
 def mostrar_texto(texto: str, color=(255, 255, 255), fondo=(0, 0, 0)):
     """Muestra texto grande en la pantalla del proyector."""
     _desactivar_cara()
@@ -253,18 +209,24 @@ def mostrar_texto(texto: str, color=(255, 255, 255), fondo=(0, 0, 0)):
 
     pygame.display.flip()
 
-def mostrar_segun_tema(respuesta: str):
-    """
-    Detecta el tema en la respuesta de la IA y muestra la imagen correspondiente.
-    Si no encuentra tema conocido, muestra el texto de la respuesta.
-    """
-    respuesta_lower = respuesta.lower()
-    for clave, archivo in IMAGENES_POR_TEMA.items():
-        if clave in respuesta_lower:
-            mostrar_imagen(archivo)
-            return
-    resumen = " ".join(respuesta.split()[:12]) + "..."
-    mostrar_texto(resumen)
+# NO HAY `mostrar_segun_tema` NI `mostrar_imagen`, Y ES A PROPÓSITO.
+# Proyectaban una foto del sitio mientras MEXA contestaba. No funcionaba, y no
+# por un bug chico: `mostrar_imagen` mataba el subproceso de la cara para
+# pintar la foto, y el `cambiar_expresion("hablando")` de la línea siguiente lo
+# relanzaba enseguida, tapándola. La cara tarda ~0.7 s en aparecer (ver
+# `_esperar_cara_lista`), así que la imagen se veía ese rato y desaparecía
+# ANTES de que MEXA dijera una palabra. Era una regresión: `mostrar_segun_tema`
+# es anterior a la cara animada, y la cara le tomó el proyector.
+#
+# En un proyector no entran las dos cosas, y la cara es lo que le da presencia
+# al robot. Así que gana la cara y esto se fue entero.
+#
+# Si algún día se quiere la foto de vuelta, lo que hay que resolver PRIMERO es
+# quién manda en la pantalla mientras MEXA habla — no reescribir esta función.
+# Y de paso, dos bugs que tenía y que no hay que heredar: matcheaba por
+# SUBCADENA ("mexica" adentro de "mexicana" mostraba la foto azteca) y las
+# claves iban sin acento, así que "Teotihuacán" bien pronunciado NO mostraba
+# `teotihuacan.jpg`.
 
 def pantalla_bienvenida():
     """Inicia la cara animada en expresión idle (esperando visitantes)."""

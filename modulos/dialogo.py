@@ -18,7 +18,7 @@ from .modulo_ia        import (generar_respuesta_stream, limpiar_historial,
 from .modulo_tts       import hablar, hablar_stream
 from .modulo_motores   import orientarse_a_usuario
 from .modulo_camara    import posicion_cara, reiniciar_objetivo
-from .modulo_proyector import mostrar_segun_tema, cambiar_expresion, reproducir_video
+from .modulo_proyector import cambiar_expresion, reproducir_video
 from .conocimiento     import es_pregunta_de_identidad
 from . import contenido
 
@@ -282,8 +282,17 @@ def _ciclo_preguntas(f: dict, idioma: str) -> Resultado:
             hablar(f["fuera_de_tema"].format(oferta=oferta))
             continue
 
+        # "pensando" ALCANZA A NO VERSE, y queda igual a propósito.
+        # `hablar_stream` consume el generador, así que los 5-25 s de
+        # procesamiento de prompt pasan DENTRO de la línea de abajo — para
+        # entonces la cara ya dice "hablando". La expresión correcta para esa
+        # espera es "pensando", pero no se puede dejar puesta: tiene
+        # boca_vol=0 y MEXA hablaría con la boca congelada (lo mismo que
+        # encontró test_expresiones en el saludo).
+        # Arreglarlo de verdad es que `hablar_stream` avise cuando llega el
+        # primer trozo. Hasta entonces esto queda como marcador de intención,
+        # no como algo que el visitante vea.
         cambiar_expresion("pensando")
-        mostrar_segun_tema(pregunta)
         cambiar_expresion("hablando")
         hablar_stream(generar_respuesta_stream(pregunta))
 
