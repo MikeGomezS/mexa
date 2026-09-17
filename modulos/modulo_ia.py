@@ -160,47 +160,26 @@ def _mensajes(contexto: str, pregunta: str) -> list:
     return mensajes
 
 
-def generar_respuesta(pregunta: str) -> str:
-    """
-    Recibe una pregunta de texto y regresa la respuesta de la IA.
-    Mantiene el historial de la conversación para preguntas de seguimiento.
-    El modelo corre localmente en la Raspberry Pi — no necesita internet.
-    """
-    if not pregunta:
-        return _MENSAJES_ERROR[_idioma][0]
-
-    tema = tema_para(pregunta)
-    if tema is None:
-        return _FUERA_DE_TEMA[_idioma]
-    contexto = contexto_de(tema)
-    _historial.append({"role": "user", "content": pregunta})
-    mensajes = _mensajes(contexto, pregunta)
-    print(f"[IA] Procesando: {pregunta} [tema: {tema}]")
-    if contexto:
-        print("[IA] Contexto verificado inyectado.")
-    try:
-        respuesta = ollama.chat(
-            model="llama3.2:1b",  # modelo liviano para Raspberry Pi 5
-            messages=mensajes,
-            options=_OPCIONES_OLLAMA,
-            keep_alive=-1,
-        )
-        texto = respuesta["message"]["content"]
-        texto = _RE_PARENTESIS.sub("", texto)
-        texto = _RE_ESPACIOS.sub(" ", texto).strip()
-        _historial.append({"role": "assistant", "content": texto})
-        print(f"[IA] Respuesta generada: {texto[:60]}...")
-        return texto
-    except Exception as e:
-        _historial.pop()  # revertir la pregunta fallida
-        print(f"[IA] Error: {e}")
-        return _MENSAJES_ERROR[_idioma][1]
+# NO HAY UNA `generar_respuesta` NO-STREAM, Y ES A PROPÓSITO.
+# Existió como gemela de la de abajo: mismo prompt, mismo historial, misma
+# base de conocimiento, pero devolviendo el texto entero de una vez. NADIE la
+# llamaba — `dialogo` usa sólo la versión stream, porque esperar la respuesta
+# completa son ~12 s de robot mudo (medido a 6.8 tokens/s en esta Pi).
+#
+# Dos implementaciones de la misma regla es una regla que se contradice sola,
+# y el costo ya se estaba pagando: al agregar el filtro de tema (cefe196)
+# hubo que escribir el mismo candado DOS VECES, en dos funciones, y la única
+# que se ejecuta en producción era una. La próxima vez alguien arregla una
+# sola y el bug sobrevive en la que nadie mira.
+#
+# Si hiciera falta el texto completo, se junta consumiendo el generador:
+#     "".join(generar_respuesta_stream(pregunta))
 
 def generar_respuesta_stream(pregunta: str):
     """
-    Igual que generar_respuesta pero yield-ea oraciones completas conforme
-    la IA las genera. Permite que el TTS empiece a hablar sin esperar el
-    texto completo — reduce la latencia de la primera respuesta.
+    Yield-ea oraciones completas conforme la IA las genera, para que el TTS
+    empiece a hablar sin esperar el texto entero — es lo que baja la latencia
+    de la primera palabra de ~12 s a ~1.2 s.
     """
     if not pregunta:
         yield _MENSAJES_ERROR[_idioma][0]

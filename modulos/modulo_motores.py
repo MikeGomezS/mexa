@@ -9,10 +9,15 @@
 #    Motor 3 → D8, D9  ┘ invierte el sentido por software, sin tocar cables)
 #
 #  SIN PWM. El firmware maneja los pines con digitalWrite: cada motor está a
-#  fondo o parado, no hay estado intermedio. Por eso los parámetros `velocidad`
-#  de las funciones de acá se aceptan pero se IGNORAN — se dejan para no romper
-#  a quien ya las llama, y para el día que haya un driver con PWM. Lo único que
-#  se elige por software es CUÁNTO DURA el movimiento (ver PULSO_GIRO_S).
+#  fondo o parado, no hay estado intermedio. Lo único que se elige por software
+#  es CUÁNTO DURA el movimiento (ver PULSO_GIRO_S).
+#
+#  ESTAS FUNCIONES YA NO ACEPTAN `velocidad`. Lo aceptaban y lo IGNORABAN, con
+#  el argumento de "no romper a quien ya las llama". Se auditó el 2026-09-17:
+#  NADIE lo pasaba, ni por nombre ni posicionalmente, en ningún módulo ni
+#  test. O sea que la razón para conservarlo era falsa y el parámetro sólo
+#  servía para que una llamada con velocidad pareciera hacer algo. El día que
+#  haya un driver con PWM se agrega de vuelta, con un firmware que lo use.
 #
 #  PROTOCOLO SERIAL (firmware unificado, arduino/mexa/mexa.ino:345-364):
 #    Conducir      F → adelante   B → atrás
@@ -61,16 +66,18 @@ def iniciar_motores():
     iniciar_conexion()
 
 
-def mover_adelante(velocidad=None):
+def mover_adelante():
     enviar("F")
 
-def mover_atras(velocidad=None):
-    enviar("B")
+# NO HAY `mover_atras`. La tenía y nadie la llamaba nunca: el retroceso pasa
+# por `mover_por_tiempo("atras", ...)` —vía la tabla `_COMANDO` de abajo—, que
+# es lo que usa `registro_camino.retroceder`. Ir hacia atrás sigue funcionando
+# igual; lo que se fue es la SEGUNDA forma de pedirlo.
 
-def girar_derecha(velocidad=None):
+def girar_derecha():
     enviar("R")
 
-def girar_izquierda(velocidad=None):
+def girar_izquierda():
     enviar("L")
 
 def detener():
@@ -101,7 +108,7 @@ def iniciar_movimiento(direccion):
     return True
 
 
-def mover_por_tiempo(direccion="adelante", segundos=1.0, velocidad=None):
+def mover_por_tiempo(direccion="adelante", segundos=1.0):
     """Mueve `segundos` y frena. Movimiento CIEGO: no mira si el firmware
     cortó por su cuenta. Si eso importa, mirá iniciar_movimiento()."""
     if not iniciar_movimiento(direccion):

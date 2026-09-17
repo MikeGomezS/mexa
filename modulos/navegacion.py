@@ -15,9 +15,8 @@
 
 import time
 
-from .modulo_motores import (detener, mover_por_tiempo, mover_adelante,
-                             iniciar_movimiento,
-                             PULSO_GIRO_S)  # re-export: es del tren de tracción
+from .modulo_motores import (detener, mover_adelante, iniciar_movimiento,
+                             PULSO_GIRO_S)  # la constante es del tren de tracción
 from .modulo_camara  import localizar_cara, reiniciar_objetivo
 from .conexion_arduino import (distancia_frontal_cm, freno_por_persona,
                                reiniciar_frente, pared_al_girar, reiniciar_pared)

@@ -113,46 +113,28 @@ def presintetizar(texto: str) -> None:
     _cache[texto] = ruta
 
 
-def _hablar_espeak(texto: str, idioma: str) -> None:
-    """Síntesis instantánea (reglas, sin red neuronal) vía espeak-ng.
-    Latencia ~0ms vs ~2-4s de Piper — usado para respuestas dinámicas de IA."""
-    voz_espeak = "es-la" if idioma == "es" else "en-us"
-    try:
-        proc = subprocess.run(
-            ["espeak-ng", "-v", voz_espeak, "-s", "140", "--stdout", texto],
-            capture_output=True, check=False,
-        )
-        wav_bytes = proc.stdout
-        if not wav_bytes:
-            return
-        buf = io.BytesIO(wav_bytes)
-        with wave.open(buf, "rb") as wf:
-            sample_rate = wf.getframerate()
-            pcm_data    = wf.readframes(wf.getnframes())
-        with open(_AUDIO_TMP, "wb") as f:
-            f.write(wav_bytes)
-        _reproducir_con_volumen(_AUDIO_TMP, pcm_data, sample_rate)
-    except Exception as e:
-        print(f"[TTS] espeak-ng falló ({e}), usando Piper como respaldo...")
-        idioma_d = _detectar_idioma(texto)
-        voz = _cargar_voz(idioma_d)
-        buf = io.BytesIO()
-        with wave.open(buf, "wb") as wf:
-            voz.synthesize_wav(texto, wf)
-        buf.seek(0)
-        with wave.open(buf, "rb") as r:
-            sample_rate = r.getframerate()
-            pcm_data    = r.readframes(r.getnframes())
-        buf.seek(0)
-        with open(_AUDIO_TMP, "wb") as f:
-            f.write(buf.getvalue())
-        _reproducir_con_volumen(_AUDIO_TMP, pcm_data, sample_rate)
-
+# NO HAY SÍNTESIS POR espeak-ng, Y NO ES UN OLVIDO.
+# Había una `_hablar_espeak` que sintetizaba con espeak-ng —reglas, sin red
+# neuronal, ~0 ms— pensada para las respuestas dinámicas de la IA, donde Piper
+# tarda 2-4 s. NADIE la llamaba: `hablar` usa Piper para todo desde hace
+# tiempo, y la latencia de la respuesta se resolvió por otro lado —cortando el
+# primer trozo en la primera coma útil (`modulo_ia._MIN_PRIMER_TROZO`), que
+# baja la espera a ~1.2 s sin sacrificar la voz neural.
+#
+# Quedaba como documentación falsa con forma de código: el docstring de
+# `hablar` seguía prometiendo "Frases dinámicas (IA): espeak-ng" mientras el
+# cuerpo llamaba a Piper. Un lector razonable creía que MEXA tenía dos voces.
+#
+# Si alguna vez hace falta una voz de emergencia sin red neuronal, se escribe
+# de nuevo — pero midiendo primero si el corte por coma no alcanza.
 
 def hablar(texto: str) -> None:
-    """Convierte texto en voz con sincronización de boca.
-    Frases cacheadas (Piper): reproducción instantánea desde disco.
-    Frases dinámicas (IA): espeak-ng, síntesis en ~0ms."""
+    """Convierte texto en voz con Piper, sincronizando la boca.
+
+    Frases cacheadas: se leen del .wav ya sintetizado en disco (instantáneo).
+    Frases nuevas: se sintetizan al vuelo. Para las respuestas largas de la
+    IA no se usa esto sino `hablar_stream`, que empieza a sonar con el primer
+    trozo en vez de esperar el texto entero."""
     if not texto:
         return
     from .modulo_brazos import animar, parar

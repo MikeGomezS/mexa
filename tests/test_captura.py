@@ -28,7 +28,6 @@ USO:  python3 tests/test_captura.py
 
 import os
 import struct
-import subprocess
 import sys
 import time
 
