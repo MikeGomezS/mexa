@@ -180,35 +180,6 @@ def enviar_volumen(v: float) -> None:
             pass
 
 
-def mostrar_texto(texto: str, color=(255, 255, 255), fondo=(0, 0, 0)):
-    """Muestra texto grande en la pantalla del proyector."""
-    _desactivar_cara()
-
-    if pantalla is None:
-        iniciar_proyector()
-
-    pantalla.fill(fondo)
-    fuente = pygame.font.SysFont("Arial", 60, bold=True)
-    palabras = texto.split()
-    lineas = []
-    linea_actual = ""
-    for palabra in palabras:
-        prueba = linea_actual + " " + palabra if linea_actual else palabra
-        if fuente.size(prueba)[0] < pantalla.get_width() - 100:
-            linea_actual = prueba
-        else:
-            lineas.append(linea_actual)
-            linea_actual = palabra
-    lineas.append(linea_actual)
-
-    y_inicio = pantalla.get_height() // 2 - (len(lineas) * 70) // 2
-    for i, linea in enumerate(lineas):
-        superficie = fuente.render(linea, True, color)
-        x = (pantalla.get_width() - superficie.get_width()) // 2
-        pantalla.blit(superficie, (x, y_inicio + i * 70))
-
-    pygame.display.flip()
-
 # NO HAY `mostrar_segun_tema` NI `mostrar_imagen`, Y ES A PROPÓSITO.
 # Proyectaban una foto del sitio mientras MEXA contestaba. No funcionaba, y no
 # por un bug chico: `mostrar_imagen` mataba el subproceso de la cara para
@@ -239,16 +210,24 @@ def reproducir_video(ruta_video: str, duracion_seg: float = 15.0):
     Se detiene después de `duracion_seg` segundos (por defecto 15).
     """
     global pantalla
+
+    # EL ARCHIVO SE CHEQUEA ANTES DE TOCAR LA PANTALLA, y el orden es el
+    # arreglo. Antes se mataba la cara, se abría la ventana y RECIÉN entonces
+    # se miraba si el video existía: con un video faltante el visitante se
+    # quedaba mirando un cartel de "Video no disponible". El proyector no
+    # muestra texto — un cartel de error en la cara de un jurado es peor que
+    # cualquier falla silenciosa. Chequeando primero, si el video no está la
+    # cara sigue donde estaba y el visitante no ve nada raro; el problema
+    # queda en consola, que es para quien sí lo tiene que ver.
+    if not os.path.exists(ruta_video):
+        print(f"[PROYECTOR] Video no encontrado: {ruta_video}")
+        return
+
     _desactivar_cara()
     # La cara cierra esta ventana al tomar la pantalla, así que hay que
     # reabrirla. Antes se daba por sentado que seguía viva y el video reventaba
     # con AttributeError sobre None.
     iniciar_proyector()
-
-    if not os.path.exists(ruta_video):
-        print(f"[PROYECTOR] Video no encontrado: {ruta_video}")
-        mostrar_texto("Video no disponible")
-        return
 
     cap = cv2.VideoCapture(ruta_video)
     if not cap.isOpened():
