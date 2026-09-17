@@ -4,6 +4,11 @@
 # ============================================================
 
 vosk>=0.3.45
+# El enlace con el Arduino (motores, brazos, PIR, ultrasónicos) pasa por acá:
+# modulos/conexion_arduino.py hace `import serial`. FALTABA en esta lista hasta
+# el 2026-09-17, así que `pip install -r` dejaba a MEXA sin poder moverse y el
+# error recién aparecía al arrancar, no al instalar.
+pyserial>=3.5
 # NO hay pyaudio: MEXA captura el micrófono con `pw-record`, para que la
 # entrada pase por PipeWire y el cancelador de eco pueda restarle su
 # propia voz (modulos/captura.py). Eso mueve la dependencia de pip a un
@@ -21,4 +26,9 @@ ollama>=0.1.8
 picamera2>=0.3.12
 opencv-python>=4.8.0
 pygame>=2.5.0
-RPi.GPIO>=0.7.1
+# NO hay RPi.GPIO, y no es un olvido: MEXA no usa un solo GPIO de la
+# Raspberry. Motores, brazos, PIR y ultrasónicos cuelgan del Arduino y se
+# hablan por USB serial (modulos/conexion_arduino.py). Estuvo listado hasta
+# el 2026-09-17 sin que nadie lo importara, y de paso hacía fallar
+# `pip install -r` en cualquier máquina que no fuera una Pi — justo donde se
+# corren los tests de lógica pura.

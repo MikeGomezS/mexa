@@ -13,15 +13,15 @@
 #  ESTRUCTURA DE CARPETAS NECESARIA:
 #    mexa/
 #    └── media/
-#        └── imagenes/
-#            ├── bienvenida.jpg
-#            ├── teotihuacan.jpg
-#            ├── azteca.jpg
-#            ├── maya.jpg
-#            ├── independencia.jpg
-#            ├── revolucion.jpg
-#            ├── olmeca.jpg
-#            └── mexico_general.jpg
+#        └── videos/
+#            ├── español/   ({Nombre}_esp.mp4)
+#            └── ingles/    ({Nombre}_eng.mp4)
+#
+#  MEXA NO USA IMÁGENES FIJAS. Este encabezado siguió pidiendo una
+#  carpeta media/imagenes/ con ocho .jpg después de que el commit
+#  a8ec7fb borrara la maquinaria que las mostraba (la cara animada
+#  las tapaba a los 0.7s): el archivo que dejó de usarlas fue el
+#  mismo que las siguió exigiendo.
 # ============================================================
 
 import cv2

@@ -1,33 +1,27 @@
 # ============================================================
-#  MEXA — Configuración central de pines GPIO y constantes
-#  Cambiar un pin aquí lo actualiza en todos los módulos.
+#  MEXA — Configuración del enlace con el Arduino
+#
+#  MEXA NO USA NINGÚN GPIO DE LA RASPBERRY. Motores, brazos, PIR
+#  y ultrasónicos cuelgan TODOS del Arduino Mega 2560 y se hablan
+#  por USB serial. Los pines de cada uno viven en
+#  arduino/mexa/mexa.ino, su única fuente de verdad.
+#
+#  QUÉ HABÍA ACÁ Y POR QUÉ SE FUE (2026-09-17): este archivo
+#  conservaba `IN1..IN4` (pines de motor en la Pi), `ENC_IZQ`,
+#  `ENC_DER`, `FAN_PIN`, `TEMP_FAN_ON/OFF` y cuatro alias de
+#  puerto. Sobrevivientes de la arquitectura vieja, cuando todo
+#  colgaba de la Pi. NADIE los importaba — eran documentación
+#  falsa con forma de código, que es la peor clase: el lector
+#  supone que si está en config.py, algo lo usa.
+#
+#  Los encoders además nunca existieron: no hay pines de encoder
+#  en el firmware ni lectura en ningún lado. MEXA no tiene
+#  odometría. El regreso se calcula POR TIEMPO
+#  (modulo_motores.PULSO_GIRO_S), y eso limita su precisión.
+#
+#  Si algún día algo vuelve a colgarse de la Pi, vuelve acá.
 # ============================================================
 
-# Sensores
-# Presencia (2x PIR) y ultrasónicos viven en el Arduino Mega, no en la Pi.
-# Sus pines se definen en arduino/mexa/mexa.ino. No hay pines de sensor aquí.
-
-# Motores (Puente H MX1508)
-IN1, IN2 = 5,  6   # Motor Izquierdo
-IN3, IN4 = 13, 19  # Motor Derecho
-
-# Encoders
-ENC_IZQ = 26
-ENC_DER = 20
-
-# Ventiladores
-FAN_PIN = 21
-
-# Arduino (UN solo Arduino via USB Serial — controla brazos + motores)
-ARDUINO_PUERTO   = "/dev/ttyACM0"  # Arduino Mega 2560 R3 original (CDC ACM); usar /dev/ttyUSB0 si es clon CH340
+# UN solo Arduino por USB serial: motores + brazos + sensores.
+ARDUINO_PUERTO   = "/dev/ttyACM0"  # Mega 2560 R3 original (CDC ACM); usar /dev/ttyUSB0 si es clon CH340
 ARDUINO_BAUDRATE = 9600
-
-# Aliases retrocompatibles (apuntan al mismo Arduino)
-BRAZOS_PUERTO    = ARDUINO_PUERTO
-BRAZOS_BAUDRATE  = ARDUINO_BAUDRATE
-MOTORES_PUERTO   = ARDUINO_PUERTO
-MOTORES_BAUDRATE = ARDUINO_BAUDRATE
-
-# Umbrales de temperatura
-TEMP_FAN_ON  = 60.0  # °C — encender ventiladores
-TEMP_FAN_OFF = 50.0  # °C — apagar ventiladores

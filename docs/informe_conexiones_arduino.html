@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>MEXA — Informe de conexiones del Arduino</title>
+<style>
+  @page { size: A4; margin: 16mm 15mm 18mm 15mm; }
+
+  :root{
+    --azul:#145ab4;
+    --azul-claro:#e8f0fb;
+    --tinta:#16202e;
+    --gris:#5b6674;
+    --linea:#d3dae3;
+    --amarillo:#fff8e1;
+    --ambar:#b26a00;
+    --rojo-bg:#fdecec;
+    --rojo:#b3261e;
+  }
+
+  *{ box-sizing:border-box; }
+
+  body{
+    margin:0;
+    font-family:"DejaVu Sans","Liberation Sans",Arial,sans-serif;
+    font-size:9.7pt;
+    line-height:1.5;
+    color:var(--tinta);
+  }
+
+  code, .pin, pre{
+    font-family:"DejaVu Sans Mono","Liberation Mono",monospace;
+  }
+
+  /* ── Portada ───────────────────────────────────── */
+  .portada{
+    height:245mm;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    page-break-after:always;
+  }
+  .portada .marca{
+    font-size:11pt; letter-spacing:.22em; text-transform:uppercase;
+    color:var(--azul); font-weight:700;
+  }
+  .portada h1{
+    font-size:30pt; line-height:1.15; margin:.35em 0 .1em; font-weight:700;
+  }
+  .portada .sub{ font-size:14pt; color:var(--gris); margin:0 0 2.2em; }
+  .portada .regla{ height:4px; background:var(--azul); width:90px; margin:1.4em 0; }
+  .ficha{ border-collapse:collapse; font-size:9.5pt; }
+  .ficha td{ padding:3px 18px 3px 0; vertical-align:top; }
+  .ficha td:first-child{ color:var(--gris); white-space:nowrap; }
+
+  /* ── Estructura ─────────────────────────────────── */
+  h2{
+    font-size:14pt; color:var(--azul); margin:0 0 .5em;
+    padding-bottom:5px; border-bottom:2px solid var(--azul);
+    page-break-after:avoid;
+  }
+  h3{ font-size:11pt; margin:1.4em 0 .4em; page-break-after:avoid; }
+  h4{ font-size:9.7pt; margin:1.1em 0 .3em; color:var(--gris);
+      text-transform:uppercase; letter-spacing:.06em; page-break-after:avoid; }
+  section{ page-break-before:always; }
+  section.seguida{ page-break-before:auto; margin-top:1.8em; }
+  p{ margin:.5em 0; }
+  ul{ margin:.4em 0; padding-left:1.1em; }
+  li{ margin:.22em 0; }
+
+  /* ── Tablas ─────────────────────────────────────── */
+  table.datos{
+    width:100%; border-collapse:collapse; font-size:8.8pt; margin:.7em 0 1em;
+    page-break-inside:auto;
+  }
+  table.datos th{
+    background:var(--azul); color:#fff; text-align:left;
+    padding:5px 7px; font-weight:600; font-size:8.5pt;
+  }
+  table.datos td{ padding:4px 7px; border-bottom:1px solid var(--linea); vertical-align:top; }
+  table.datos tr:nth-child(even) td{ background:#f7f9fc; }
+  table.datos tr{ page-break-inside:avoid; }
+  td.c, th.c{ text-align:center; }
+  .pin{ font-weight:700; color:var(--azul); white-space:nowrap; }
+  .io{ font-size:7.6pt; letter-spacing:.05em; color:var(--gris); white-space:nowrap; }
+  .cmd{
+    display:inline-block; min-width:1.5em; text-align:center;
+    background:var(--azul); color:#fff; border-radius:3px;
+    padding:1px 5px; font-weight:700; font-size:8.5pt;
+  }
+
+  /* ── Cajas ──────────────────────────────────────── */
+  .nota, .alerta, .clave{
+    padding:8px 11px; margin:.9em 0; font-size:9pt;
+    border-left:4px solid; page-break-inside:avoid;
+  }
+  .nota{ background:var(--azul-claro); border-color:var(--azul); }
+  .alerta{ background:var(--amarillo); border-color:var(--ambar); }
+  .clave{ background:var(--rojo-bg); border-color:var(--rojo); }
+  .nota strong, .clave strong{ color:inherit; }
+  .fuente{ font-size:8pt; color:var(--gris); margin-top:-.4em; }
+
+  figure{ margin:1em 0; page-break-inside:avoid; }
+  figcaption{ font-size:8.2pt; color:var(--gris); margin-top:5px; text-align:center; }
+  svg{ width:100%; height:auto; }
+
+  .pie{ font-size:8pt; color:var(--gris); border-top:1px solid var(--linea);
+        margin-top:1.6em; padding-top:6px; }
+</style>
+</head>
+<body>
+
+<!-- ══════════════ PORTADA ══════════════ -->
+<div class="portada">
+  <div class="marca">MEXA · WRO Future Innovators 2026</div>
+  <h1>Informe de conexiones<br>del Arduino</h1>
+  <p class="sub">Cableado, protocolo serial y reparto de responsabilidades<br>entre la Raspberry Pi 5 y el Arduino Mega 2560</p>
+  <div class="regla"></div>
+  <table class="ficha">
+    <tr><td>Equipo</td><td>Bruno, Emilia y Majo</td></tr>
+    <tr><td>Fecha del informe</td><td>17 de septiembre de 2026</td></tr>
+    <tr><td>Controlador</td><td>Arduino Mega 2560 R3 &mdash; 21 pines en uso</td></tr>
+    <tr><td>Fuente de verdad</td><td><code>arduino/mexa/mexa.ino</code> (368 líneas)</td></tr>
+    <tr><td>Último cambio del firmware</td><td><code>edbf50e</code> &mdash; 21 de agosto de 2026</td></tr>
+  </table>
+  <div class="nota" style="margin-top:2.4em">
+    <strong>Cómo se armó este informe.</strong> Todos los pines, umbrales y comandos
+    fueron leídos del código fuente, no de documentación previa. El contraste sacó a la
+    luz ocho contradicciones entre el código y la documentación: la sección&nbsp;10 dice
+    cuáles eran y cómo se corrigieron.
+  </div>
+</div>
+
+<!-- ══════════════ 1. ARQUITECTURA ══════════════ -->
+<section style="page-break-before:auto">
+<h2>1. Arquitectura: quién decide y quién reacciona</h2>
+
+<p>MEXA tiene <strong>dos cerebros</strong>, y el reparto entre ellos no es casual.
+La Raspberry Pi 5 corre visión, voz, IA y proyector: es la que <em>decide</em>. El
+Arduino Mega 2560 mueve motores y brazos y lee los sensores de proximidad: es el que
+<em>reacciona</em>. Los une <strong>un solo cable USB</strong> a 9600 baud.</p>
+
+<p>La frontera está trazada sobre un criterio explícito en el firmware: <strong>un
+reflejo no puede depender de una máquina ocupada</strong>. La Pi puede estar
+decodificando voz o sintetizando audio justo cuando el visitante da un paso al frente;
+el Arduino nunca está ocupado. Por eso el freno de emergencia vive en el Arduino. La Pi
+elige <em>a qué distancia</em> quiere quedarse; el Arduino sólo garantiza que MEXA no
+atropelle a nadie.</p>
+
+<table class="datos">
+  <tr><th style="width:22%">Capa</th><th style="width:39%">Responsabilidad</th><th>Archivo</th></tr>
+  <tr><td>Firmware</td><td>Mover motores y brazos, leer PIR y ultrasónicos, frenar por reflejo</td><td><code>arduino/mexa/mexa.ino</code></td></tr>
+  <tr><td>Transporte serial</td><td>Dueño único del puerto: abre, escribe, arma líneas de entrada</td><td><code>modulos/conexion_arduino.py</code></td></tr>
+  <tr><td>Telemetría</td><td>Traduce el texto del Arduino a datos. Lógica pura, sin hardware</td><td><code>modulos/telemetria.py</code></td></tr>
+  <tr><td>Motores</td><td>API en castellano sobre el protocolo de una letra</td><td><code>modulos/modulo_motores.py</code></td></tr>
+  <tr><td>Brazos</td><td>Activa y detiene el gesto de hablar</td><td><code>modulos/modulo_brazos.py</code></td></tr>
+  <tr><td>Presencia</td><td>Consulta el estado de los PIR que reporta el Arduino</td><td><code>modulos/modulo_sensores.py</code></td></tr>
+</table>
+
+<div class="nota">
+  <strong>Un solo dueño del puerto.</strong> Hay un solo Arduino, así que hay un solo
+  puerto serial. <code>conexion_arduino.py</code> es su único propietario: motores,
+  brazos y sensores escriben <em>a través de él</em>. Abrir el mismo puerto dos veces
+  daría <em>device busy</em> y dejaría a MEXA muda y quieta.
+</div>
+
+<h3>Puerto y velocidad</h3>
+<table class="datos">
+  <tr><th style="width:34%">Parámetro</th><th style="width:26%">Valor</th><th>Nota</th></tr>
+  <tr><td>Puerto</td><td><code>/dev/ttyACM0</code></td><td>Mega 2560 R3 original (CDC ACM). Si es un clon con CH340, es <code>/dev/ttyUSB0</code></td></tr>
+  <tr><td>Baudrate</td><td>9600</td><td>≈960 bytes/s en total</td></tr>
+  <tr><td>Timeout de lectura</td><td>1 s</td><td><code>serial.Serial(..., timeout=1)</code></td></tr>
+  <tr><td>Espera tras abrir</td><td>2 s</td><td>El Arduino <strong>se reinicia</strong> cuando la Pi abre el puerto</td></tr>
+  <tr><td>Fin de línea</td><td><code>\n</code></td><td>En ambos sentidos. El firmware ignora <code>\n</code> y <code>\r</code> como comandos</td></tr>
+</table>
+<p class="fuente">Fuente: <code>modulos/config.py</code> · <code>modulos/conexion_arduino.py:iniciar_conexion()</code></p>
+</section>
+
+<!-- ══════════════ 2. DIAGRAMA ══════════════ -->
+<section>
+<h2>2. Diagrama de conexiones</h2>
+
+<figure>
+<svg viewBox="0 0 1000 660" xmlns="http://www.w3.org/2000/svg" font-family="DejaVu Sans, Arial, sans-serif">
+  <defs>
+    <marker id="fl" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 z" fill="#5b6674"/>
+    </marker>
+    <marker id="flb" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L7,3 L0,6 z" fill="#145ab4"/>
+    </marker>
+  </defs>
+
+  <!-- Raspberry Pi -->
+  <rect x="14" y="250" width="150" height="120" rx="7" fill="#e8f0fb" stroke="#145ab4" stroke-width="2"/>
+  <text x="89" y="285" text-anchor="middle" font-size="15" font-weight="700" fill="#145ab4">Raspberry Pi 5</text>
+  <text x="89" y="308" text-anchor="middle" font-size="11.5" fill="#16202e">visión · voz · IA</text>
+  <text x="89" y="326" text-anchor="middle" font-size="11.5" fill="#16202e">proyector</text>
+  <text x="89" y="352" text-anchor="middle" font-size="11" fill="#5b6674">DECIDE</text>
+
+  <!-- USB -->
+  <line x1="164" y1="298" x2="262" y2="298" stroke="#145ab4" stroke-width="2.4" marker-end="url(#flb)"/>
+  <line x1="262" y1="322" x2="164" y2="322" stroke="#145ab4" stroke-width="2.4" marker-end="url(#flb)"/>
+  <text x="213" y="290" text-anchor="middle" font-size="10.5" fill="#145ab4">comandos</text>
+  <text x="213" y="342" text-anchor="middle" font-size="10.5" fill="#145ab4">telemetría</text>
+  <text x="213" y="380" text-anchor="middle" font-size="10" font-weight="700" fill="#5b6674">USB · 9600 baud</text>
+
+  <!-- Arduino -->
+  <rect x="262" y="60" width="196" height="530" rx="7" fill="#145ab4"/>
+  <text x="360" y="92" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">Arduino</text>
+  <text x="360" y="113" text-anchor="middle" font-size="16" font-weight="700" fill="#fff">Mega 2560</text>
+  <text x="360" y="136" text-anchor="middle" font-size="11.5" fill="#bcd4f2">REACCIONA</text>
+  <line x1="286" y1="150" x2="434" y2="150" stroke="#4d86d0" stroke-width="1.5"/>
+  <text x="360" y="575" text-anchor="middle" font-size="10.5" fill="#bcd4f2">LED D13 = motor activo</text>
+
+  <!-- helper: labels on Arduino right edge -->
+  <g font-size="11" font-weight="700" fill="#fff" text-anchor="end">
+    <text x="450" y="182">D2·D3 D4·D5</text>
+    <text x="450" y="252">D6·D7 D8·D9</text>
+    <text x="450" y="322">D11 · D10</text>
+    <text x="450" y="382">D22 · D24</text>
+    <text x="450" y="452">D29/28 D31/30</text>
+    <text x="450" y="522">D51/50 D53/52</text>
+  </g>
+
+  <!-- connector lines -->
+  <g stroke="#5b6674" stroke-width="1.8" marker-end="url(#fl)">
+    <line x1="458" y1="178" x2="596" y2="178"/>
+    <line x1="458" y1="248" x2="596" y2="248"/>
+    <line x1="458" y1="318" x2="596" y2="318"/>
+    <line x1="458" y1="378" x2="596" y2="378"/>
+    <line x1="458" y1="448" x2="596" y2="448"/>
+    <line x1="458" y1="518" x2="596" y2="518"/>
+  </g>
+
+  <!-- right blocks -->
+  <g>
+    <rect x="600" y="148" width="250" height="62" rx="6" fill="#fff" stroke="#16202e" stroke-width="1.8"/>
+    <text x="614" y="172" font-size="13" font-weight="700" fill="#16202e">MX1508 #1 → lado IZQUIERDO</text>
+    <text x="614" y="194" font-size="11.5" fill="#5b6674">Motor 0 + Motor 1</text>
+
+    <rect x="600" y="218" width="250" height="62" rx="6" fill="#fff" stroke="#16202e" stroke-width="1.8"/>
+    <text x="614" y="242" font-size="13" font-weight="700" fill="#16202e">MX1508 #2 → lado DERECHO</text>
+    <text x="614" y="264" font-size="11.5" fill="#5b6674">Motor 2 + Motor 3 (en espejo)</text>
+
+    <rect x="600" y="292" width="250" height="52" rx="6" fill="#fff" stroke="#16202e" stroke-width="1.8"/>
+    <text x="614" y="316" font-size="13" font-weight="700" fill="#16202e">2× Servo — brazos</text>
+    <text x="614" y="334" font-size="11.5" fill="#5b6674">izquierdo D11 · derecho D10</text>
+
+    <rect x="600" y="352" width="250" height="52" rx="6" fill="#fff" stroke="#16202e" stroke-width="1.8"/>
+    <text x="614" y="376" font-size="13" font-weight="700" fill="#16202e">2× PIR HC-SR501</text>
+    <text x="614" y="394" font-size="11.5" fill="#5b6674">presencia (OR de ambos)</text>
+
+    <rect x="600" y="418" width="250" height="60" rx="6" fill="#fff" stroke="#16202e" stroke-width="1.8"/>
+    <text x="614" y="442" font-size="13" font-weight="700" fill="#16202e">2× HC-SR04 laterales</text>
+    <text x="614" y="462" font-size="11.5" fill="#5b6674">no raspar la pared al girar</text>
+
+    <rect x="600" y="490" width="250" height="60" rx="6" fill="#fff" stroke="#16202e" stroke-width="1.8"/>
+    <text x="614" y="514" font-size="13" font-weight="700" fill="#16202e">2× HC-SR04 frontales</text>
+    <text x="614" y="534" font-size="11.5" fill="#5b6674">distancia a la persona · freno</text>
+  </g>
+
+  <!-- battery / power -->
+  <marker id="fp" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+    <path d="M0,0 L7,3 L0,6 z" fill="#b26a00"/>
+  </marker>
+  <rect x="14" y="440" width="150" height="86" rx="7" fill="#fff8e1" stroke="#b26a00" stroke-width="2"/>
+  <text x="89" y="470" text-anchor="middle" font-size="13" font-weight="700" fill="#b26a00">Batería</text>
+  <text x="89" y="491" text-anchor="middle" font-size="11" fill="#16202e">VM de los drivers</text>
+  <text x="89" y="511" text-anchor="middle" font-size="11" fill="#16202e">GND común</text>
+
+  <!-- ruta de potencia: bordea por abajo y sube por fuera de los bloques -->
+  <g fill="none" stroke="#b26a00" stroke-width="2" stroke-dasharray="6 4">
+    <path d="M89 528 L89 610 L905 610 L905 179 L858 179" marker-end="url(#fp)"/>
+    <path d="M905 249 L858 249" marker-end="url(#fp)"/>
+    <path d="M360 610 L360 594" marker-end="url(#fp)"/>
+  </g>
+  <circle cx="905" cy="249" r="3.5" fill="#b26a00"/>
+  <circle cx="360" cy="610" r="3.5" fill="#b26a00"/>
+  <text x="540" y="634" text-anchor="middle" font-size="11" font-weight="700" fill="#b26a00">TIERRA COMÚN — el GND de la batería va también al GND del Arduino</text>
+</svg>
+<figcaption>Topología física. El Arduino concentra <strong>todo</strong> lo que se mueve
+y todo lo que mide proximidad; la cámara, el micrófono y el proyector no pasan por él.</figcaption>
+</figure>
+
+<div class="alerta">
+  <strong>La tierra común no es un detalle.</strong> El <code>GND</code> del driver va al
+  negativo de la batería <em>y también</em> al <code>GND</code> del Arduino. Sin esa
+  referencia compartida, las señales de dirección que manda el Arduino no tienen contra
+  qué medirse y los motores hacen cualquier cosa &mdash; o nada.
+</div>
+</section>
+
+<!-- ══════════════ 3. TABLA MAESTRA ══════════════ -->
+<section>
+<h2>3. Tabla maestra de pines</h2>
+<p>Los 21 pines del Mega que MEXA usa hoy. Es la lista completa: ningún otro pin está
+declarado en <code>setup()</code>.</p>
+
+<table class="datos">
+  <tr>
+    <th class="c" style="width:8%">Pin</th>
+    <th class="c" style="width:11%">Sentido</th>
+    <th style="width:26%">Componente</th>
+    <th>Función</th>
+  </tr>
+  <tr><td class="c pin">D2</td><td class="c io">SALIDA</td><td>MX1508 &mdash; Motor 0</td><td>Dirección canal A · lado izquierdo</td></tr>
+  <tr><td class="c pin">D3</td><td class="c io">SALIDA</td><td>MX1508 &mdash; Motor 0</td><td>Dirección canal B · lado izquierdo</td></tr>
+  <tr><td class="c pin">D4</td><td class="c io">SALIDA</td><td>MX1508 &mdash; Motor 1</td><td>Dirección canal A · lado izquierdo</td></tr>
+  <tr><td class="c pin">D5</td><td class="c io">SALIDA</td><td>MX1508 &mdash; Motor 1</td><td>Dirección canal B · lado izquierdo</td></tr>
+  <tr><td class="c pin">D6</td><td class="c io">SALIDA</td><td>MX1508 &mdash; Motor 2</td><td>Dirección canal A · lado derecho</td></tr>
+  <tr><td class="c pin">D7</td><td class="c io">SALIDA</td><td>MX1508 &mdash; Motor 2</td><td>Dirección canal B · lado derecho</td></tr>
+  <tr><td class="c pin">D8</td><td class="c io">SALIDA</td><td>MX1508 &mdash; Motor 3</td><td>Dirección canal A · lado derecho</td></tr>
+  <tr><td class="c pin">D9</td><td class="c io">SALIDA</td><td>MX1508 &mdash; Motor 3</td><td>Dirección canal B · lado derecho</td></tr>
+  <tr><td class="c pin">D10</td><td class="c io">SALIDA</td><td>Servo brazo derecho</td><td>Señal de posición (librería <code>Servo</code>)</td></tr>
+  <tr><td class="c pin">D11</td><td class="c io">SALIDA</td><td>Servo brazo izquierdo</td><td>Señal de posición (librería <code>Servo</code>)</td></tr>
+  <tr><td class="c pin">D13</td><td class="c io">SALIDA</td><td>LED de la placa</td><td>Encendido = hay una orden de motor activa</td></tr>
+  <tr><td class="c pin">D22</td><td class="c io">ENTRADA</td><td>PIR izquierdo HC-SR501</td><td>Movimiento detectado</td></tr>
+  <tr><td class="c pin">D24</td><td class="c io">ENTRADA</td><td>PIR derecho HC-SR501</td><td>Movimiento detectado</td></tr>
+  <tr><td class="c pin">D28</td><td class="c io">ENTRADA</td><td>HC-SR04 lateral derecho</td><td>ECHO</td></tr>
+  <tr><td class="c pin">D29</td><td class="c io">SALIDA</td><td>HC-SR04 lateral derecho</td><td>TRIG</td></tr>
+  <tr><td class="c pin">D30</td><td class="c io">ENTRADA</td><td>HC-SR04 lateral izquierdo</td><td>ECHO</td></tr>
+  <tr><td class="c pin">D31</td><td class="c io">SALIDA</td><td>HC-SR04 lateral izquierdo</td><td>TRIG</td></tr>
+  <tr><td class="c pin">D50</td><td class="c io">ENTRADA</td><td>HC-SR04 frontal izquierdo</td><td>ECHO</td></tr>
+  <tr><td class="c pin">D51</td><td class="c io">SALIDA</td><td>HC-SR04 frontal izquierdo</td><td>TRIG</td></tr>
+  <tr><td class="c pin">D52</td><td class="c io">ENTRADA</td><td>HC-SR04 frontal derecho</td><td>ECHO</td></tr>
+  <tr><td class="c pin">D53</td><td class="c io">SALIDA</td><td>HC-SR04 frontal derecho</td><td>TRIG</td></tr>
+</table>
+
+<div class="nota">
+  <strong>Por qué el ECHO va directo, sin divisor de tensión.</strong> El HC-SR04
+  entrega 5&nbsp;V en su pin ECHO. Un microcontrolador de 3,3&nbsp;V se dañaría y por eso
+  la receta habitual incluye un divisor resistivo &mdash; pero el Mega 2560 <em>es</em> una
+  placa de 5&nbsp;V y tolera esa tensión en sus entradas. Los cuatro ECHO van directos.
+</div>
+
+<div class="alerta">
+  <strong>D50&ndash;D53 son los pines de SPI del Mega</strong> (MISO, MOSI, SCK, SS).
+  Hoy no hay conflicto porque MEXA no tiene ningún periférico SPI. Si mañana se agrega
+  uno &mdash; lector de tarjeta SD, módulo de radio &mdash;, los ultrasónicos frontales
+  hay que mudarlos a otros pines <em>antes</em>, no después.
+</div>
+</section>
+
+<!-- ══════════════ 4. MOTORES ══════════════ -->
+<section>
+<h2>4. Tren de tracción: 4 motores DC</h2>
+
+<p>Cuatro motores de corriente continua, cada uno con dos pines de dirección. Ocho
+canales en total, así que hacen falta <strong>dos módulos MX1508</strong> (cada uno
+maneja dos motores).</p>
+
+<table class="datos">
+  <tr><th class="c" style="width:14%">Motor</th><th class="c" style="width:16%">Pines</th><th class="c" style="width:18%">Lado</th><th class="c" style="width:16%">Invertido</th><th>Tecla de diagnóstico</th></tr>
+  <tr><td class="c">Motor 0</td><td class="c pin">D2 · D3</td><td class="c">Izquierdo</td><td class="c">no</td><td class="c"><span class="cmd">1</span></td></tr>
+  <tr><td class="c">Motor 1</td><td class="c pin">D4 · D5</td><td class="c">Izquierdo</td><td class="c">no</td><td class="c"><span class="cmd">2</span></td></tr>
+  <tr><td class="c">Motor 2</td><td class="c pin">D6 · D7</td><td class="c">Derecho</td><td class="c"><strong>sí</strong></td><td class="c"><span class="cmd">3</span></td></tr>
+  <tr><td class="c">Motor 3</td><td class="c pin">D8 · D9</td><td class="c">Derecho</td><td class="c"><strong>sí</strong></td><td class="c"><span class="cmd">4</span></td></tr>
+</table>
+
+<h3>Los motores derechos se invierten por software, no por cable</h3>
+<p>Los motores del lado derecho están montados <em>en espejo</em> respecto de los
+izquierdos: la misma tensión los hace girar al revés. En vez de cruzar los cables en el
+driver &mdash; una decisión invisible que muerde meses después &mdash; el firmware lo
+resuelve con una tabla explícita:</p>
+<p style="margin-left:1.2em"><code>const bool INVERTIR[4] = { false, false, true, true };</code></p>
+<p>Si un motor sale al revés, <strong>se cambia su <code>true</code>/<code>false</code>
+ahí y nada más</strong>. La corrección queda escrita, versionada y visible, en lugar de
+escondida en un mazo de cables.</p>
+
+<h3>Cómo se traduce cada maniobra</h3>
+<table class="datos">
+  <tr><th class="c" style="width:16%">Comando</th><th style="width:26%">Maniobra</th><th class="c" style="width:22%">Lado izquierdo</th><th class="c" style="width:22%">Lado derecho</th></tr>
+  <tr><td class="c"><span class="cmd">F</span></td><td>Adelante</td><td class="c">+1</td><td class="c">+1</td></tr>
+  <tr><td class="c"><span class="cmd">B</span></td><td>Atrás</td><td class="c">&minus;1</td><td class="c">&minus;1</td></tr>
+  <tr><td class="c"><span class="cmd">R</span></td><td>Giro a la derecha</td><td class="c">+1</td><td class="c">&minus;1</td></tr>
+  <tr><td class="c"><span class="cmd">L</span></td><td>Giro a la izquierda</td><td class="c">&minus;1</td><td class="c">+1</td></tr>
+  <tr><td class="c"><span class="cmd">S</span></td><td>Stop</td><td class="c">0</td><td class="c">0</td></tr>
+</table>
+<p>Los giros son <em>sobre el eje</em>: un lado hacia adelante y el otro hacia atrás.
+MEXA rota en el lugar, sin radio de giro.</p>
+
+<div class="clave">
+  <strong>No hay PWM. Ninguno.</strong> El firmware maneja los pines con
+  <code>digitalWrite()</code>: cada motor está <em>a fondo o parado</em>, sin estados
+  intermedios. Consecuencia directa: <strong>la velocidad no se puede elegir por
+  software</strong>. Los parámetros <code>velocidad</code> de
+  <code>modulo_motores.py</code> se aceptan y se <em>ignoran</em> &mdash; están ahí para
+  no romper a quien ya los llama, y para el día que haya un driver con PWM.
+  <br><br>
+  Lo único que sí se elige por software es <strong>cuánto dura</strong> el movimiento:
+  <code>PULSO_GIRO_S = 1.20</code>, calibrado en hardware.
+</div>
+</section>
+
+<!-- ══════════════ 5. BRAZOS ══════════════ -->
+<section>
+<h2>5. Brazos: 2 servos con gesto no bloqueante</h2>
+
+<table class="datos">
+  <tr><th style="width:34%">Parámetro</th><th class="c" style="width:18%">Valor</th><th>Significado</th></tr>
+  <tr><td>Servo brazo derecho</td><td class="c pin">D10</td><td>Señal de posición</td></tr>
+  <tr><td>Servo brazo izquierdo</td><td class="c pin">D11</td><td>Señal de posición</td></tr>
+  <tr><td><code>BRAZO_REPOSO</code></td><td class="c">90°</td><td>Posición quieta, brazos abajo</td></tr>
+  <tr><td><code>BRAZO_MIN</code> / <code>BRAZO_MAX</code></td><td class="c">60° / 120°</td><td>Extremos del barrido al hablar</td></tr>
+  <tr><td><code>BRAZO_PASO</code></td><td class="c">2°</td><td>Grados por actualización</td></tr>
+  <tr><td><code>BRAZO_INTERVALO_MS</code></td><td class="c">15 ms</td><td>Velocidad del gesto ≈ 133°/s</td></tr>
+</table>
+
+<h3>El espejo del brazo derecho</h3>
+<p>El servo derecho está montado invertido, así que recibe el ángulo reflejado:
+<code>brazoDer.write(180 - brazoAng)</code>. Los dos brazos suben y bajan juntos en vez
+de ir uno contra el otro. Misma idea que <code>INVERTIR[]</code> en los motores: el
+montaje mecánico se corrige en software, explícito y en un solo lugar.</p>
+
+<h3>Por qué el gesto no bloquea</h3>
+<p>La forma ingenua de animar un servo es un bucle con <code>delay()</code>. Sería
+fatal acá: mientras el Arduino duerme no lee el serial, no vigila los ultrasónicos y no
+frena. El firmware usa <strong>barrido por <code>millis()</code></strong>:
+<code>actualizarBrazos()</code> se llama en cada vuelta del <code>loop()</code>, mira si
+pasaron 15&nbsp;ms, mueve dos grados y <em>vuelve</em>. El brazo se mueve y el Arduino
+sigue atendiendo todo lo demás.</p>
+
+<div class="nota">
+  <strong>Regla general del firmware:</strong> nada que bloquee el <code>loop()</code>
+  más de lo indispensable. Es la misma razón por la que los ultrasónicos frontales se
+  miden de a uno por pasada (sección&nbsp;7) y por la que la distancia se reporta cada
+  200&nbsp;ms aunque se mida cada 60.
+</div>
+</section>
+
+<!-- ══════════════ 6. PRESENCIA ══════════════ -->
+<section>
+<h2>6. Presencia: 2 sensores PIR</h2>
+
+<table class="datos">
+  <tr><th style="width:34%">Elemento</th><th class="c" style="width:18%">Valor</th><th>Nota</th></tr>
+  <tr><td>PIR derecho</td><td class="c pin">D24</td><td>Entrada digital</td></tr>
+  <tr><td>PIR izquierdo</td><td class="c pin">D22</td><td>Entrada digital</td></tr>
+  <tr><td>Lógica</td><td class="c">OR</td><td>Con que <em>uno</em> detecte movimiento, hay persona</td></tr>
+  <tr><td>Aviso a la Pi</td><td class="c"><code>PRES:0</code> / <code>PRES:1</code></td><td>Al cambiar de estado <strong>y</strong> como latido periódico</td></tr>
+  <tr><td><code>PRESENCIA_LATIDO_MS</code></td><td class="c">1000 ms</td><td>Latido de vida: la Pi sabe que el Arduino sigue vivo</td></tr>
+</table>
+
+<p>Los PIR <strong>ya no se leen desde la Raspberry Pi</strong>. Antes colgaban del GPIO
+de la Pi; hoy están en el Arduino y la Pi se entera por serial. Por eso
+<code>modulo_sensores.py</code> no importa <code>RPi.GPIO</code>: delega en la conexión
+compartida.</p>
+
+<p>El latido de un segundo hace dos cosas a la vez: mantiene fresco el estado de
+presencia aunque no cambie, y le confirma a la Pi que el firmware sigue corriendo. Un
+silencio de más de un segundo en el canal es, en sí mismo, un síntoma.</p>
+</section>
+
+<!-- ══════════════ 7. ULTRASÓNICOS ══════════════ -->
+<section>
+<h2>7. Ultrasónicos: cuatro HC-SR04, dos trabajos distintos</h2>
+
+<p>Los cuatro sensores son el mismo modelo, pero cumplen funciones que no se parecen en
+nada. <strong>Nunca miden los cuatro a la vez</strong>: el firmware mira al frente
+cuando avanza y al lateral cuando gira, según lo que MEXA esté haciendo.</p>
+
+<h3>7.1 Laterales — no raspar la pared al girar</h3>
+<table class="datos">
+  <tr><th style="width:32%">Sensor</th><th class="c" style="width:14%">TRIG</th><th class="c" style="width:14%">ECHO</th><th>Se vigila durante</th></tr>
+  <tr><td>Lateral derecho</td><td class="c pin">D29</td><td class="c pin">D28</td><td>Giro a la derecha (<span class="cmd">R</span>)</td></tr>
+  <tr><td>Lateral izquierdo</td><td class="c pin">D31</td><td class="c pin">D30</td><td>Giro a la izquierda (<span class="cmd">L</span>)</td></tr>
+</table>
+<p>Si el lateral <em>del lado hacia el que gira</em> está a menos de
+<code>UMBRAL_PARED_CM = 15&nbsp;cm</code>, el Arduino frena los motores y avisa
+<code>WALL:D</code> o <code>WALL:I</code>. El giro se cancela.</p>
+
+<h3>7.2 Frontales — medir a la persona y frenar</h3>
+<table class="datos">
+  <tr><th style="width:32%">Sensor</th><th class="c" style="width:14%">TRIG</th><th class="c" style="width:14%">ECHO</th><th>Se vigila durante</th></tr>
+  <tr><td>Frontal derecho</td><td class="c pin">D53</td><td class="c pin">D52</td><td rowspan="2" style="vertical-align:middle">Avance (<span class="cmd">F</span>)</td></tr>
+  <tr><td>Frontal izquierdo</td><td class="c pin">D51</td><td class="c pin">D50</td></tr>
+</table>
+<p>Mientras MEXA avanza, los frontales informan la distancia a la Pi
+(<code>DIST:&lt;izq&gt;,&lt;der&gt;</code>) y frenan solos si alguien queda a menos de
+<code>FRENO_PERSONA_CM = 25&nbsp;cm</code>, avisando <code>STOP:&lt;cm&gt;</code>.</p>
+
+<h3>7.3 Constantes de tiempo y distancia</h3>
+<table class="datos">
+  <tr><th style="width:36%">Constante</th><th class="c" style="width:16%">Valor</th><th>Por qué ese número</th></tr>
+  <tr><td><code>UMBRAL_PARED_CM</code></td><td class="c">15 cm</td><td>Una pared se esquiva de cerca</td></tr>
+  <tr><td><code>FRENO_PERSONA_CM</code></td><td class="c">25 cm</td><td>Piso de seguridad, último recurso. <em>Pendiente de calibrar en el robot real</em></td></tr>
+  <tr><td><code>MEDIR_INTERVALO_MS</code></td><td class="c">60 ms</td><td>Cada cuánto se <strong>mide</strong></td></tr>
+  <tr><td><code>REPORTE_INTERVALO_MS</code></td><td class="c">200 ms</td><td>Cada cuánto se <strong>informa</strong> a la Pi</td></tr>
+  <tr><td><code>ECHO_TIMEOUT_US</code></td><td class="c">5 000 µs</td><td>Laterales: alcance ≈ 85 cm</td></tr>
+  <tr><td><code>ECHO_TIMEOUT_FRENTE_US</code></td><td class="c">12 000 µs</td><td>Frontales: alcance ≈ 2 m, para ver venir a la persona</td></tr>
+  <tr><td><code>SIN_ECO_CM</code></td><td class="c">999</td><td>Centinela: no hubo eco. Es un <em>dato</em>, no un error</td></tr>
+  <tr><td><code>DISTANCIA_OBJETIVO_CM</code></td><td class="c">70 cm</td><td>Dónde quiere pararse MEXA a conversar. Vive en la Pi, calibrado el 21/08/2026</td></tr>
+</table>
+
+<div class="nota" style="page-break-inside:auto">
+  <strong>Se mide rápido, se habla lento.</strong> El freno es un reflejo y necesita medir
+  seguido (60&nbsp;ms), pero la Pi sólo necesita saber cuánto falta (200&nbsp;ms).
+  Reportando cada 60&nbsp;ms serían ≈272&nbsp;B/s de los 960&nbsp;B/s que da 9600 baud: si
+  la Pi se demora un frame de visión, el buffer de salida del Arduino (64 bytes) se llena,
+  <code>Serial.print</code> <strong>bloquea</strong> y se congela el <code>loop()</code>
+  &mdash; con él, el mismísimo reflejo que se quería mejorar.
+  <br><br>
+  <strong>Y se mide de a uno.</strong> <code>pulseIn</code> bloquea hasta 12&nbsp;ms por
+  sensor; los dos frontales juntos congelarían el <code>loop()</code> 24&nbsp;ms por ciclo.
+  Alternando, cada uno se refresca cada ≈120&nbsp;ms: a la velocidad de MEXA
+  (≈2,5&nbsp;cm/s), tres décimas de milímetro entre lecturas. El freno, en cambio, se
+  evalúa en <strong>cada</strong> medición y manda el sensor <em>más cercano</em>, no el
+  promedio: vale el hombro que entra primero.
+</div>
+</section>
+
+<!-- ══════════════ 8. PROTOCOLO ══════════════ -->
+<section>
+<h2>8. Protocolo serial</h2>
+
+<h3>8.1 De la Pi al Arduino — comandos de una letra</h3>
+<table class="datos">
+  <tr><th class="c" style="width:12%">Byte</th><th style="width:30%">Acción</th><th>Detalle</th></tr>
+  <tr><td class="c"><span class="cmd">F</span></td><td>Adelante</td><td>Activa la vigilancia frontal y olvida las lecturas del avance anterior</td></tr>
+  <tr><td class="c"><span class="cmd">B</span></td><td>Atrás</td><td>Sin vigilancia: MEXA no tiene sensores traseros</td></tr>
+  <tr><td class="c"><span class="cmd">R</span></td><td>Giro a la derecha</td><td>Activa la evasión del lateral derecho</td></tr>
+  <tr><td class="c"><span class="cmd">L</span></td><td>Giro a la izquierda</td><td>Activa la evasión del lateral izquierdo</td></tr>
+  <tr><td class="c"><span class="cmd">S</span></td><td>Stop</td><td>Frena los cuatro motores</td></tr>
+  <tr><td class="c"><span class="cmd">1</span>&hellip;<span class="cmd">4</span></td><td>Mover un solo motor</td><td>Diagnóstico: identificar qué motor es cuál</td></tr>
+  <tr><td class="c"><span class="cmd">H</span></td><td>Gesticular</td><td>Arranca el barrido de brazos (MEXA está hablando)</td></tr>
+  <tr><td class="c"><span class="cmd">P</span></td><td>Brazos a reposo</td><td>Detiene el gesto y vuelve a 90°</td></tr>
+</table>
+<p>Cualquier otro byte &mdash; incluidos <code>\n</code> y <code>\r</code> &mdash; se
+descarta sin responder.</p>
+
+<h3>8.2 Del Arduino a la Pi — líneas terminadas en <code>\n</code></h3>
+<table class="datos">
+  <tr><th style="width:30%">Línea</th><th style="width:26%">Significado</th><th>Cuándo se emite</th></tr>
+  <tr><td><code>MEXA firmware listo: …</code></td><td>Banner de arranque</td><td>Una vez, en <code>setup()</code></td></tr>
+  <tr><td><code>OK &lt;cmd&gt;</code></td><td>Eco del comando</td><td>Por cada comando reconocido</td></tr>
+  <tr><td><code>PRES:0</code> / <code>PRES:1</code></td><td>Presencia (PIR)</td><td>Al cambiar de estado + latido cada 1 s</td></tr>
+  <tr><td><code>DIST:&lt;izq&gt;,&lt;der&gt;</code></td><td>Distancia frontal en cm</td><td>Cada 200 ms mientras avanza</td></tr>
+  <tr><td><code>STOP:&lt;cm&gt;</code></td><td>Frenó solo: persona cerca</td><td>Al cruzar <code>FRENO_PERSONA_CM</code></td></tr>
+  <tr><td><code>WALL:I</code> / <code>WALL:D</code></td><td>Frenó por pared lateral</td><td>Al cruzar <code>UMBRAL_PARED_CM</code> girando</td></tr>
+</table>
+
+<h3>8.3 Los reflejos: el Arduino puede terminar un comando antes que la Pi</h3>
+<p>Ésta es la consecuencia más importante de todo el diseño, y la más fácil de pasar por
+alto: <strong>un comando puede terminar antes de lo que la Pi pidió.</strong> El firmware
+frena por su cuenta ante una persona o una pared. Cuando eso pasa, los motores
+<em>ya</em> están parados; la Pi no lo previene, se <em>entera</em>.</p>
+
+<table class="datos">
+  <tr><th style="width:34%">Función en la Pi</th><th style="width:22%">Devuelve</th><th>Qué significa</th></tr>
+  <tr><td><code>hay_presencia()</code></td><td><code>bool</code></td><td>Último estado de los PIR</td></tr>
+  <tr><td><code>distancia_frontal_cm()</code></td><td><code>float</code> o <code>None</code></td><td>cm al obstáculo más cercano al frente</td></tr>
+  <tr><td><code>freno_por_persona()</code></td><td><code>float</code> o <code>None</code></td><td>Hecho consumado: el Arduino ya frenó</td></tr>
+  <tr><td><code>pared_al_girar()</code></td><td><code>'I'</code>, <code>'D'</code> o <code>None</code></td><td>Hecho consumado: el Arduino ya canceló el giro</td></tr>
+</table>
+
+<div class="clave">
+  <strong><code>None</code> es «no sé»; 999 es «no hay nadie».</strong> Confundirlas es
+  lo que haría que MEXA frene contra un fantasma, o que empuje contra una persona porque
+  el sensor dejó de hablar. El firmware mide al frente <em>sólo mientras avanza</em>, así
+  que quieta siempre da <code>None</code>. Y si los frontales no están conectados, da
+  <code>None</code> siempre y MEXA se guía por la cámara, exactamente como antes.
+  <strong>Ningún sensor ausente puede empeorar lo que ya funcionaba.</strong>
+</div>
+
+<div class="alerta">
+  <strong>Por qué la Pi debe mandar su propio <code>S</code> cuando se entera de un
+  reflejo.</strong> Si el firmware cortó un giro a la décima parte y la Pi no lo registra,
+  el <em>registro del camino</em> anota el pulso completo y el regreso gira de más. Un
+  error angular no se suma al final: <strong>rota todos los tramos que vienen
+  después</strong>.
+</div>
+</section>
+
+<!-- ══════════════ 9. FUERA DEL ARDUINO ══════════════ -->
+<section class="seguida">
+<h2>9. Lo que NO pasa por el Arduino</h2>
+<p>Para que el mapa quede completo: estos periféricos van directo a la Raspberry Pi.</p>
+<table class="datos">
+  <tr><th style="width:26%">Conector de la Pi</th><th style="width:30%">Periférico</th><th>Nota</th></tr>
+  <tr><td>CSI</td><td>Cámara Arducam Módulo 3 (IMX708)</td><td>Detección de caras con YuNet</td></tr>
+  <tr><td>USB</td><td>Micrófono 360° iTalk-02</td><td>Mono de 1 canal: <strong>no</strong> da dirección de llegada del sonido</td></tr>
+  <tr><td>USB</td><td>Arduino Mega 2560</td><td>El canal de este informe</td></tr>
+  <tr><td>micro-HDMI 1</td><td>Proyector KACOTA HY300 Pro</td><td>Cara animada y videos</td></tr>
+</table>
+</section>
+
+<!-- ══════════════ 10. INCONSISTENCIAS ══════════════ -->
+<section>
+<h2>10. Lo que mentía, y qué se hizo</h2>
+
+<p>Al contrastar el código con la documentación aparecieron <strong>ocho</strong>
+desajustes. Ninguno rompía a MEXA en la Pi donde ya está todo instalado, pero cada uno
+era una trampa para quien volviera a armar el robot desde cero. <strong>Los ocho se
+corrigieron el 17 de septiembre de 2026</strong>, en la misma sesión que produjo este
+informe.</p>
+
+<div class="clave">
+  <strong>El patrón, que importa más que la lista.</strong> Todos nacieron igual: el
+  código cambió y la documentación se quedó donde estaba. Documentación desactualizada no
+  es documentación incompleta &mdash; es <em>peor que no tener nada</em>, porque el lector
+  la sigue creyendo que es verdad y pierde el tiempo buscando una falla eléctrica que no
+  existe. La regla que quedó escrita en el <code>README.txt</code>: si el código cambia un
+  pin, un modelo o un binario, el README se corrige <strong>en el mismo commit</strong>.
+</div>
+
+<h3>Las tres que impedían instalar MEXA desde cero</h3>
+<table class="datos">
+  <tr><th style="width:30%">Qué decía</th><th style="width:33%">Qué era verdad</th><th>Corrección</th></tr>
+  <tr>
+    <td><code>pyserial</code> no figuraba en <code>requirements.txt</code></td>
+    <td><code>conexion_arduino.py</code> hace <code>import serial</code>: sin esa librería MEXA no puede moverse</td>
+    <td>Agregado a <code>requirements.txt</code></td>
+  </tr>
+  <tr>
+    <td>README: <code>ollama pull llama3.2:<strong>3b</strong></code></td>
+    <td>El código pide <code>llama3.2:<strong>1b</strong></code> en tres lugares de <code>modulo_ia.py</code></td>
+    <td>Corregido a <code>1b</code></td>
+  </tr>
+  <tr>
+    <td>README: <code>sudo apt install <strong>espeak</strong></code></td>
+    <td><code>modulo_tts.py</code> invoca el binario <code>espeak-ng</code>, que es otro paquete</td>
+    <td>Corregido a <code>espeak-ng</code></td>
+  </tr>
+</table>
+<p>Las tres juntas dan el mismo resultado: se sigue el README al pie de la letra, y MEXA
+no arranca. El error aparece recién al ejecutar, nunca al instalar.</p>
+
+<h3>Las tres omisiones: pasos obligatorios que no estaban</h3>
+<table class="datos">
+  <tr><th style="width:32%">Faltaba</th><th style="width:34%">Sin eso</th><th>Corrección</th></tr>
+  <tr><td>Descargar las voces de Piper a <code>media/tts/</code></td><td>MEXA no tiene voz neural: cae siempre al respaldo</td><td>Paso 5, con las URLs verificadas</td></tr>
+  <tr><td>Descargar los modelos Vosk</td><td>MEXA no entiende nada de lo que se le dice</td><td>Paso 6</td></tr>
+  <tr><td>Instalar el AEC de PipeWire</td><td>MEXA se oye a sí misma y no se la puede interrumpir</td><td>Paso 8</td></tr>
+</table>
+
+<h3>Las dos de código muerto</h3>
+<table class="datos">
+  <tr><th style="width:30%">Dónde</th><th style="width:33%">Qué era</th><th>Corrección</th></tr>
+  <tr>
+    <td><code>config.py</code></td>
+    <td><code>IN1..IN4</code>, <code>ENC_IZQ</code>, <code>ENC_DER</code>, <code>FAN_PIN</code>, <code>TEMP_FAN_ON/OFF</code> y cuatro alias de puerto. <strong>Nadie los importaba</strong></td>
+    <td>Borrados. Queda sólo el puerto del Arduino</td>
+  </tr>
+  <tr>
+    <td><code>modulo_proyector.py</code></td>
+    <td>El encabezado exigía una carpeta <code>media/imagenes/</code> con ocho <code>.jpg</code> que el commit <code>a8ec7fb</code> ya había dejado sin uso</td>
+    <td>Reemplazado por la estructura real de videos</td>
+  </tr>
+</table>
+<p><code>RPi.GPIO</code> también se fue de <code>requirements.txt</code>: MEXA no usa un
+solo GPIO de la Raspberry, y esa línea hacía fallar <code>pip install -r</code> en
+cualquier máquina que no fuera una Pi &mdash; justo donde se corren los tests de lógica
+pura.</p>
+
+<h3>Dos verdades que la documentación nunca dijo</h3>
+<div class="alerta">
+  <strong>MEXA no tiene encoders.</strong> <code>config.py</code> declaraba
+  <code>ENC_IZQ</code> y <code>ENC_DER</code>, pero el firmware no tiene un solo pin de
+  encoder y nada en la Pi los lee. <strong>No hay odometría</strong>: el regreso al punto
+  de partida se calcula por TIEMPO (<code>PULSO_GIRO_S = 1.20</code>), no por vueltas de
+  rueda. Eso limita la precisión del retroceso y ahora está escrito donde se ve.
+</div>
+<div class="alerta">
+  <strong><code>FRENO_PERSONA_CM</code> sigue sin calibrar.</strong> Es la única de las
+  ocho que <em>no</em> se puede cerrar desde el teclado: el firmware la marca
+  <code>⚙ CALIBRAR en el robot real</code> y los 25&nbsp;cm son un valor de escritorio.
+  Es el último recurso de seguridad frente a una persona &mdash; merece una medición con
+  cinta métrica antes de la competencia.
+</div>
+
+<h3>Verificación</h3>
+<p>Tras la limpieza, los 15 tests de lógica pura del repositorio siguen pasando, y los
+seis módulos que dependían de <code>config.py</code> importan sin error. La limpieza no
+tocó una sola línea de comportamiento: sólo se borró lo que no se usaba y se corrigió lo
+que no era cierto.</p>
+</section>
+
+<!-- ══════════════ 11. VERIFICACIÓN ══════════════ -->
+<section>
+<h2>11. Cómo verificar el cableado en hardware</h2>
+
+<p>El repositorio ya trae las herramientas para comprobar cada bloque. Se corren desde
+la raíz del proyecto.</p>
+
+<table class="datos">
+  <tr><th style="width:44%">Comando</th><th>Qué responde</th></tr>
+  <tr><td><code>python3 tests/diagnostico_motores.py</code></td><td>¿Dónde se corta la orden? Muestra el banner, manda <code>F</code> y espera <code>OK F</code></td></tr>
+  <tr><td><code>python3 tests/test_manual_arduino.py</code></td><td>Prueba interactiva tecla por tecla: motores, brazos y respuestas del Arduino</td></tr>
+  <tr><td><code>python3 tests/probar_ultrasonicos_frontales.py</code></td><td>¿Los frontales miden? ¿Cuánto se desvían de la cinta métrica?</td></tr>
+  <tr><td><code>python3 tests/calibrar_pulsos.py giro</code></td><td>Cuánto rota MEXA por pulso, para ajustar <code>PULSO_GIRO_S</code></td></tr>
+</table>
+
+<h3>Árbol de diagnóstico cuando MEXA «no se mueve y no dice nada»</h3>
+<table class="datos">
+  <tr><th style="width:44%">Síntoma</th><th>Dónde está cortada la cadena</th></tr>
+  <tr><td>No aparece el banner <code>MEXA firmware listo</code></td><td>El comando no llega al firmware: puerto equivocado, sketch viejo o Arduino colgado</td></tr>
+  <tr><td>Hay banner pero no llega <code>OK F</code></td><td>El firmware no procesa el comando</td></tr>
+  <tr><td>Llega <code>OK F</code> <strong>y el LED D13 enciende</strong></td><td>La lógica está 100% sana. El problema es de <strong>potencia o cableado de motores</strong>, aguas abajo del Arduino: batería, VM del driver o tierra común</td></tr>
+  <tr><td>Los frontales dicen siempre <code>999</code></td><td>El sensor no ve nada: revisar TRIG/ECHO y hacia dónde apunta</td></tr>
+  <tr><td>No llega ni una línea <code>DIST:</code></td><td>El firmware cargado es el viejo, o el avance nunca arrancó</td></tr>
+</table>
+
+<div class="alerta">
+  <strong>Seguridad antes de probar motores.</strong> Elevá el robot con las ruedas en el
+  aire: los scripts mandan <code>F</code> de verdad. Todos mandan <code>S</code> (stop) y
+  <code>P</code> (brazos a reposo) al salir, incluso ante un error o un Ctrl+C.
+</div>
+
+<div class="pie">
+  MEXA · WRO Future Innovators 2026 · Informe generado el 17 de septiembre de 2026.
+  Fuente primaria: <code>arduino/mexa/mexa.ino</code>, que es la única autoridad sobre
+  los pines. Si el firmware cambia, este informe se regenera en el mismo commit.
+</div>
+</section>
+
+</body>
+</html>

@@ -10,28 +10,14 @@
 #
 #  Para ejecutar: python3 main.py
 #
-#  ANTES DE CORRER:
-#  1. Instalar dependencias:
-#     pip install -r requirements.txt
-#     sudo apt install espeak vlc pipewire-bin -y
-#     (pipewire-bin trae pw-record: MEXA captura el micrófono POR AHÍ
-#      para que el cancelador de eco pueda restarle su propia voz.
-#      Sin ese binario se queda sorda. Ver modulos/captura.py.)
-#
-#  2. Descargar el modelo de IA:
-#     curl -fsSL https://ollama.com/install.sh | sh
-#     ollama pull llama3.2:3b
-#
-#  2b. Descargar los DOS modelos de voz (Vosk), desde
-#     https://alphacephei.com/vosk/models — descomprimir en la raíz
-#     del proyecto con estos nombres exactos:
-#       vosk-model-small-es-0.42    -> modelo_vosk_es/
-#       vosk-model-small-en-us-0.15 -> modelo_vosk_en/
-#     Sin el de inglés MEXA sigue arrancando, pero escucha todo con
-#     oído español (ver modulos/modulo_audio.py).
-#
-#  3. Conectar todos los componentes (motores/PIR/brazos van por el
-#     Arduino vía USB serial; la cámara al puerto CSI).
+#  ANTES DE CORRER: seguir los pasos 1 a 10 del README.txt. Están
+#  ahí y NO acá a propósito. Este encabezado repetía las mismas
+#  instrucciones, y el 2026-09-17 se encontró que las dos copias
+#  habían divergido: las dos pedían `espeak` cuando el código llama
+#  a `espeak-ng`, y `llama3.2:3b` cuando modulo_ia.py usa
+#  `llama3.2:1b`. Dos copias de una instrucción no son un respaldo:
+#  son dos lugares donde equivocarse y uno solo que alguien corrige.
+#  UNA sola fuente de verdad — el README.
 # ============================================================
 
 import time
