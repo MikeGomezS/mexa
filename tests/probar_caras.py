@@ -32,7 +32,7 @@ from modulos.modulo_proyector import (
 RECORRIDO = (
     "idle", "escuchando", "hablando", "pensando", "confundido",
     "sorprendido", "feliz", "emocionado", "guino", "triste",
-    "enojado", "dormido",
+    "dormido",
 )
 
 

@@ -9,7 +9,12 @@ Recibe comandos por stdin para cambiar de estado en tiempo real:
   volumen:<0.0-1.0>\n      -> sincroniza la boca con el audio que está saliendo
 
 Expresiones: idle, hablando, escuchando, pensando, feliz, sorprendido, triste,
-             confundido, guino, emocionado, enojado, dormido.
+             confundido, guino, emocionado, dormido.
+
+NO HAY "enojado", y es a propósito: MEXA es una guía de museo y no tiene
+ninguna rama del diálogo donde enojarse. La pose existía sin cablear, así
+que era una cara que nadie iba a ver nunca. `tests/test_expresiones.py`
+avisa si alguien pide una expresión que no está.
 
 ARQUITECTURA
 ────────────
@@ -207,11 +212,6 @@ POSES: dict[str, Pose] = {
         boca_curva=0.92, boca_abre=52, boca_ancho=1.20, rubor=0.85,
         boca_vol=0.60, ceja_vol=22, bob_vol=14,
         bob_amp=26, bob_vel=3.4, vaga=0.20,
-    ),
-    "enojado": replace(
-        _N, ojo_esc=0.96, pupila_esc=0.66, ceja_ang=24, ceja_alt=-10,
-        ceja_arco=2, parp_sup=0.26, parp_sup_curva=-0.06, boca_curva=-0.58,
-        boca_ancho=0.98, boca_abre=10, bob_amp=6, bob_vel=2.2, vaga=0.15, gestos=0.40,
     ),
     "dormido": replace(
         _N, parp_sup=1.0, parp_inf=1.0, parp_sup_curva=-ARCO_CIERRE,
