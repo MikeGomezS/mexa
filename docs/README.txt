@@ -1,4 +1,13 @@
-# docs/ — Informes generados
+# docs/ — Informes y registros
+
+## validaciones.txt
+Qué se probó EN EL ROBOT y cuándo. Se edita a mano.
+
+Existe porque los mensajes de commit no se actualizan: una línea "PENDIENTE
+de validar en hardware" sigue diciendo lo mismo tres meses después de que
+alguien lo validó. La historia de git es inmutable a propósito; el estado de
+las validaciones no. Cuando un pendiente se valida, se anota ahí — NO se
+reescribe el commit.
 
 ## informe_conexiones_arduino
 Cableado completo del Arduino, protocolo serial y reflejos de freno.

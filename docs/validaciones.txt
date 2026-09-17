@@ -1,0 +1,81 @@
+# Validaciones en hardware
+
+POR QUÉ EXISTE ESTE ARCHIVO
+───────────────────────────
+Varios commits terminan con una línea "PENDIENTE de validar en hardware:".
+Esa línea es útil cuando se escribe y ENGAÑOSA tres meses después, porque un
+mensaje de commit registra lo que se sabía EN SU MOMENTO y no se actualiza
+nunca. Ya pasó: el 2026-09-17, al inventariar pendientes, se leyó el
+"PENDIENTE: calibrar factor_duracion" de ac8086d (2026-06-23) y se dio por
+abierto durante tres meses un tema que las presentaciones habían resuelto
+hacía rato.
+
+La historia de git es inmutable a propósito. El estado de las validaciones NO
+lo es. Así que vive acá, donde se puede corregir.
+
+REGLA: cuando un PENDIENTE se valida en el robot, se anota en esta tabla EN EL
+MISMO MOMENTO. No se reescribe el commit.
+
+QUÉ CUENTA COMO VALIDADO
+────────────────────────
+Que alguien lo haya visto funcionar EN EL ROBOT, encendido, con sensores
+reales. No cuenta que pasen los tests: los tests de tests/ corren sin
+hardware a propósito y cubren la lógica, no la física. Las dos cosas son
+necesarias y ninguna reemplaza a la otra.
+
+Lo que esta tabla registra es la CONFIRMACIÓN DEL EQUIPO, no una medición
+automática. Si hace falta el detalle de qué se observó, va en la columna de
+notas.
+
+
+TABLA
+─────
+
+  commit    declarado    validado     qué se probó
+  ────────  ───────────  ───────────  ─────────────────────────────────────
+  ac8086d   2026-06-23   2026-09-17   Retroceso al punto de partida.
+                                      Confirmado en varias presentaciones:
+                                      MEXA vuelve bien. factor_avance=1.0
+                                      y factor_giro=1.0 son los valores
+                                      CORRECTOS para este robot — el
+                                      default no era "sin calibrar".
+
+  ff417f0   2026-08-21   2026-09-17   Selección de objetivo con dos
+                                      personas distintas de verdad.
+
+  8222569   2026-09-09   2026-09-17   Acercamiento por ultrasonido con la
+                                      cámara ciega (~1.5 m, lente tapado).
+
+  cefe196   2026-09-17   2026-09-17   Filtro de tema por voz: pregunta de
+                                      identidad, pregunta fuera de tema y
+                                      seguimiento sin nombre propio.
+
+  f5f289b   2026-09-17   2026-09-17   La cara durante la espera del LLM:
+                                      piensa mientras piensa y pasa a
+                                      hablar cuando arranca el audio.
+
+  Al 2026-09-17 no queda ningún PENDIENTE de hardware abierto.
+
+
+CÓMO SABER SI QUEDA ALGUNO SIN ANOTAR
+─────────────────────────────────────
+Esto lista los PENDIENTE de toda la historia; lo que aparezca acá y no esté
+en la tabla de arriba, está sin validar:
+
+  git log --format='%h|%ad' --date=short | while IFS='|' read h d; do
+    git log -1 --format=%B "$h" | grep -iE '^PENDIENTE' | head -1 \
+      | sed "s|^|$h  $d  |"
+  done
+
+
+SI VUELVE A FALLAR ALGO YA VALIDADO
+───────────────────────────────────
+Una validación no es para siempre: cambia la batería, el peso, las ruedas, la
+luz de la sala. Las herramientas para re-medir siguen en tests/ —
+
+  calibrar_retroceso.py        vuelve al punto de partida (avance y giro)
+  calibrar_acercamiento.py     acercamiento por cámara y ultrasonido
+  calibrar_vocabulario.py      qué nombres puede OÍR MEXA de verdad
+  calibrar_umbral_voz.py       umbral de voz contra el ruido de sala
+  calibrar_aec.py              cancelador de eco
+  probar_caras.py              recorrido por las 11 expresiones
